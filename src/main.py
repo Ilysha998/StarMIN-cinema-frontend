@@ -4,9 +4,9 @@ from state.app_state import AppState
 from config import config
 
 from views.login_view import LoginView
-from views.movies_view import MoviesView
+from views.billboard_view import BillboardView
+from views.films_view import FilmsView
 from views.movie_detail_view import MovieDetailView
-from views.sessions_view import SessionsView
 from views.session_detail_view import SessionDetailView
 from views.tickets_view import TicketsView
 from views.profile_view import ProfileView
@@ -15,14 +15,7 @@ from views.admin.admin_sessions import AdminSessionsView
 from views.admin.admin_users import AdminUsersView
 from views.admin.admin_stats import AdminStatsView
 
-from widgets.adaptive_nav import build_adaptive_nav
-
-
-NAV_MOVIES = 0
-NAV_SESSIONS = 1
-NAV_TICKETS = 2
-NAV_PROFILE = 3
-NAV_ADMIN = 4
+from widgets.adaptive_nav import build_adaptive_nav, NAV_BILLBOARD, NAV_FILMS, NAV_TICKETS, NAV_PROFILE, NAV_ADMIN
 
 
 def main(page: ft.Page):
@@ -39,7 +32,7 @@ def main(page: ft.Page):
 
     _nav_component = None
     _nav_position = ""
-    _current_nav_index = NAV_MOVIES
+    _current_nav_index = NAV_BILLBOARD
     _view_stack: list = []
 
     def _setup_themes():
@@ -96,7 +89,7 @@ def main(page: ft.Page):
 
         _build_nav()
         if app_state.is_logged_in:
-            _navigate_to(NAV_MOVIES)
+            _navigate_to(NAV_BILLBOARD)
         page.update()
 
     def _build_nav():
@@ -141,9 +134,9 @@ def main(page: ft.Page):
         nonlocal _current_nav_index
         await sp.set("starmin_token", app_state.token)
         _view_stack.clear()
-        _current_nav_index = NAV_MOVIES
+        _current_nav_index = NAV_BILLBOARD
         _build_nav()
-        _navigate_to(NAV_MOVIES)
+        _navigate_to(NAV_BILLBOARD)
 
     async def _on_logout():
         app_state.clear_auth()
@@ -173,10 +166,10 @@ def main(page: ft.Page):
         _content_area.controls.clear()
         view = None
 
-        if index == NAV_MOVIES:
-            view = MoviesView(api_client, app_state, on_movie_click=_on_movie_click)
-        elif index == NAV_SESSIONS:
-            view = SessionsView(api_client, app_state, on_session_click=_on_session_click)
+        if index == NAV_BILLBOARD:
+            view = BillboardView(api_client, app_state, on_session_click=_on_session_click)
+        elif index == NAV_FILMS:
+            view = FilmsView(api_client, app_state, on_movie_click=_on_movie_click)
         elif index == NAV_TICKETS:
             view = TicketsView(api_client, app_state)
         elif index == NAV_PROFILE:
@@ -220,11 +213,11 @@ def main(page: ft.Page):
             _current_nav_index = prev_index
             _navigate_to(prev_index)
 
-    def _on_movie_click(movie_id: int):
-        _push_view(MovieDetailView(api_client, app_state, movie_id, on_session_click=_on_session_click, on_back=_pop_view))
-
     def _on_session_click(session_id: int):
         _push_view(SessionDetailView(api_client, app_state, session_id, on_back=_pop_view, on_ticket_bought=lambda: None))
+
+    def _on_movie_click(movie_id: int):
+        _push_view(MovieDetailView(api_client, app_state, movie_id, on_session_click=_on_session_click, on_back=_pop_view))
 
     def _update_nav_selection():
         if _nav_component:

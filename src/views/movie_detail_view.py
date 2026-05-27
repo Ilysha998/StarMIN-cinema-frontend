@@ -7,9 +7,14 @@ from models.session import Session
 from state.app_state import AppState
 from widgets.session_card import SessionCard
 from typing import Callable, Optional
+from datetime import datetime, timedelta
 
 
-AGE_LABELS = {0: "0+", 6: "6+", 12: "12+", 16: "16+", 18: "18+"}
+AGE_COLORS = {
+    0: ft.Colors.GREEN, 6: ft.Colors.BLUE, 12: ft.Colors.ORANGE,
+    16: ft.Colors.DEEP_ORANGE, 18: ft.Colors.RED,
+}
+HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
 
 
 class MovieDetailView(ft.Column):
@@ -30,7 +35,10 @@ class MovieDetailView(ft.Column):
         )
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
         self._info_section = ft.Container()
-        self._sessions_column = ft.Column(spacing=8)
+        self._today_label = ft.Container()
+        self._today_column = ft.Column(spacing=8)
+        self._other_label = ft.Container()
+        self._other_column = ft.Column(spacing=8)
 
         super().__init__(
             scroll=ft.ScrollMode.AUTO,
@@ -38,17 +46,14 @@ class MovieDetailView(ft.Column):
             controls=[
                 ft.Container(
                     padding=16,
-                    content=ft.Row(controls=[self._back_btn, ft.Text("Детали фильма", size=24, weight=ft.FontWeight.BOLD)]),
+                    content=ft.Row(controls=[self._back_btn, ft.Text("Фильм", size=24, weight=ft.FontWeight.BOLD)]),
                 ),
                 self._progress,
                 ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._info_section),
-                ft.Container(
-                    padding=16,
-                    content=ft.Column([
-                        ft.Text("Сеансы", size=18, weight=ft.FontWeight.BOLD),
-                        self._sessions_column,
-                    ]),
-                ),
+                self._today_label,
+                ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._today_column),
+                self._other_label,
+                ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._other_column),
             ],
             expand=True,
         )
@@ -77,54 +82,127 @@ class MovieDetailView(ft.Column):
         if not m:
             return
 
-        age_label = AGE_LABELS.get(m.age_restriction, f"{m.age_restriction}+")
-        age_color = {
-            0: ft.Colors.GREEN, 6: ft.Colors.BLUE, 12: ft.Colors.ORANGE,
-            16: ft.Colors.DEEP_ORANGE, 18: ft.Colors.RED,
-        }.get(m.age_restriction, ft.Colors.GREY)
+        age_c = AGE_COLORS.get(m.age_restriction, ft.Colors.GREY)
+
+        now = datetime.now()
+        today = now.date()
+        sessions_by_date: dict[object, list[Session]] = {}
+        for s in self._sessions:
+            d = s.datetime.date()
+            sessions_by_date.setdefault(d, []).append(s)
+
+        has_today = today in sessions_by_date
+        active_today = []
+        ended_today = []
+        if has_today:
+            for s in sessions_by_date[today]:
+                session_end = s.datetime + timedelta(minutes=m.duration)
+                if session_end > now:
+                    active_today.append(s)
+                else:
+                    ended_today.append(s)
+
+        today_status = ft.Container()
+        if has_today:
+            if active_today:
+                today_status = ft.Container(
+                    padding=ft.padding.Padding(6, 8, 6, 8),
+                    border_radius=6,
+                    bgcolor=ft.Colors.GREEN,
+                    content=ft.Text(f"Сегодня — {len(active_today)} сеанс{'ов' if len(active_today) > 1 else ''}", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                )
+            else:
+                today_status = ft.Container(
+                    padding=ft.padding.Padding(6, 8, 6, 8),
+                    border_radius=6,
+                    bgcolor=ft.Colors.ORANGE,
+                    content=ft.Text("Сегодня — все сеансы завершены", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                )
+        else:
+            today_status = ft.Container(
+                padding=ft.padding.Padding(6, 8, 6, 8),
+                border_radius=6,
+                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                content=ft.Text("Сегодня сеансов нет", size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+            )
 
         self._info_section.content = ft.Column(
             spacing=12,
             controls=[
                 ft.Container(
-                    height=200,
+                    height=160,
                     bgcolor=ft.Colors.SURFACE_CONTAINER,
                     border_radius=12,
                     alignment=ft.alignment.Alignment(0, 0),
-                    content=ft.Icon(ft.Icons.MOVIE_OUTLINED, size=80, color=ft.Colors.ON_SURFACE_VARIANT),
+                    content=ft.Icon(ft.Icons.MOVIE_OUTLINED, size=64, color=ft.Colors.ON_SURFACE_VARIANT),
                 ),
-                ft.Text(m.title, size=28, weight=ft.FontWeight.BOLD),
+                ft.Text(m.title, size=24, weight=ft.FontWeight.BOLD),
                 ft.Row(
-                    spacing=16,
+                    spacing=12,
                     controls=[
                         ft.Container(
-                            padding=ft.padding.Padding(6, 12, 6, 12),
-                            border_radius=8,
-                            bgcolor=age_color,
-                            content=ft.Text(age_label, size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                            padding=ft.padding.Padding(4, 8, 4, 8),
+                            border_radius=6,
+                            bgcolor=age_c,
+                            content=ft.Text(f"{m.age_restriction}+", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
                         ),
                         ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.CATEGORY, size=18, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(m.genre, size=15, color=ft.Colors.ON_SURFACE_VARIANT),
+                            ft.Icon(ft.Icons.CATEGORY, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
+                            ft.Text(m.genre, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
                         ]),
                         ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.TIMER_OUTLINED, size=18, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(f"{m.duration} мин", size=15, color=ft.Colors.ON_SURFACE_VARIANT),
+                            ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
+                            ft.Text(f"{m.duration} мин", size=14, color=ft.Colors.ON_SURFACE_VARIANT),
                         ]),
+                        today_status,
                     ],
+                    wrap=True,
                 ),
             ],
         )
 
-        self._sessions_column.controls.clear()
-        if not self._sessions:
-            self._sessions_column.controls.append(
-                ft.Text("Нет сеансов для этого фильма", color=ft.Colors.ON_SURFACE_VARIANT)
+        self._today_column.controls.clear()
+        self._other_column.controls.clear()
+        self._today_label.content = ft.Container()
+        self._other_label.content = ft.Container()
+
+        if active_today:
+            self._today_label.content = ft.Container(
+                padding=ft.padding.Padding(16, 8, 16, 0),
+                content=ft.Text("Сегодня — актуальные", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
             )
-        else:
-            for s in self._sessions:
-                card = SessionCard(s, movie_title=m.title, on_click=self._on_session_click)
-                self._sessions_column.controls.append(card)
+            active_today.sort(key=lambda s: s.datetime)
+            for s in active_today:
+                self._today_column.controls.append(
+                    SessionCard(s, movie_title=m.title, on_click=self._on_session_click)
+                )
+
+        if ended_today:
+            if active_today:
+                self._today_column.controls.append(ft.Divider())
+            self._today_column.controls.append(
+                ft.Text("Завершённые", size=13, color=ft.Colors.ON_SURFACE_VARIANT)
+            )
+            ended_today.sort(key=lambda s: s.datetime)
+            for s in ended_today:
+                card = SessionCard(s, movie_title=m.title, on_click=None)
+                card.opacity = 0.5
+                self._today_column.controls.append(card)
+
+        other_dates = sorted(d for d in sessions_by_date if d != today)
+        if other_dates:
+            self._other_label.content = ft.Container(
+                padding=ft.padding.Padding(16, 8, 16, 0),
+                content=ft.Text("Другие дни", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_SURFACE_VARIANT),
+            )
+            for d in other_dates:
+                self._other_column.controls.append(
+                    ft.Text(d.strftime("%d %B"), size=14, weight=ft.FontWeight.W_500)
+                )
+                for s in sorted(sessions_by_date[d], key=lambda x: x.datetime):
+                    self._other_column.controls.append(
+                        SessionCard(s, movie_title=m.title, on_click=self._on_session_click)
+                    )
 
     def _show_snackbar(self, msg: str):
         if self.page:

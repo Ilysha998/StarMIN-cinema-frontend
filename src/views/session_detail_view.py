@@ -103,6 +103,12 @@ class SessionDetailView(ft.Column):
         date_str = dt.strftime("%d %b %Y")
         time_str = dt.strftime("%H:%M")
 
+        from datetime import datetime as _dt
+        started = dt <= _dt.now()
+
+        if started:
+            self._buy_btn.visible = False
+
         self._info_section.content = ft.Column(
             spacing=8,
             controls=[
@@ -135,6 +141,19 @@ class SessionDetailView(ft.Column):
                 ),
             ],
         )
+
+        if started:
+            self._info_section.content.controls.append(
+                ft.Container(
+                    padding=ft.padding.Padding(8, 10, 8, 10),
+                    border_radius=8,
+                    bgcolor=ft.Colors.ERROR_CONTAINER,
+                    content=ft.Row(spacing=6, controls=[
+                        ft.Icon(ft.Icons.EVENT_BUSY, size=18, color=ft.Colors.ON_ERROR_CONTAINER),
+                        ft.Text("Сеанс уже начался — покупка недоступна", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_ERROR_CONTAINER),
+                    ]),
+                )
+            )
 
         booked = [seat for seat in range(1, self._available.total_seats + 1) if seat not in self._available.available_seats]
         grid = SeatGrid(s.hall, booked, on_seat_select=self._on_seat_select)
