@@ -49,7 +49,7 @@ class AdminUsersView(ft.Column):
         self.update()
 
         try:
-            self._users = self._users_api.get_all(skip=0, limit=200)
+            self._users = self._users_api.get_all(skip=0, limit=100)
             self._render()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
