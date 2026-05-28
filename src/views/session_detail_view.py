@@ -3,12 +3,13 @@ from api.client import ApiClient, ApiError
 from api.sessions import SessionsApi
 from api.tickets import TicketsApi
 from api.movies import MoviesApi
-from models.session import SessionWithTickets, Session
+from models.session import SessionWithTickets
 from models.movie import Movie
-from models.ticket import AvailableSeats
+from models.ticket import AvailableSeats, Ticket
 from state.app_state import AppState
 from widgets.seat_grid import SeatGrid
 from typing import Callable, Optional
+from datetime import datetime as _dt
 
 
 HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
@@ -39,12 +40,32 @@ class SessionDetailView(ft.Column):
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
         self._info_section = ft.Container()
         self._seat_container = ft.Container()
+
+        self._phone_field = ft.TextField(
+            label="Телефон",
+            prefix_icon=ft.Icons.PHONE,
+            hint_text="Для связи",
+            visible=False,
+        )
+        self._email_field = ft.TextField(
+            label="Email",
+            prefix_icon=ft.Icons.EMAIL,
+            hint_text="Для получения билета",
+            visible=False,
+        )
+        self._contact_column = ft.Column(spacing=8, controls=[
+            self._phone_field,
+            self._email_field,
+        ])
+
         self._buy_btn = ft.Button(
             "Выберите место",
             icon=ft.Icons.CONFIRMATION_NUMBER,
             disabled=True,
             style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
         )
+
+        self._result_section = ft.Container(visible=False)
 
         super().__init__(
             scroll=ft.ScrollMode.AUTO,
@@ -60,11 +81,13 @@ class SessionDetailView(ft.Column):
                 self._progress,
                 ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._info_section),
                 ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._seat_container),
+                ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._contact_column),
                 ft.Container(
                     padding=16,
                     alignment=ft.alignment.Alignment(0, 0),
                     content=self._buy_btn,
                 ),
+                ft.Container(padding=ft.padding.Padding(16, 0, 16, 0), content=self._result_section),
             ],
             expand=True,
         )
@@ -102,12 +125,15 @@ class SessionDetailView(ft.Column):
         dt = s.datetime
         date_str = dt.strftime("%d %b %Y")
         time_str = dt.strftime("%H:%M")
-
-        from datetime import datetime as _dt
         started = dt <= _dt.now()
 
         if started:
             self._buy_btn.visible = False
+
+        logged_in = self._app_state.is_logged_in
+        if not logged_in:
+            self._phone_field.visible = True
+            self._email_field.visible = True
 
         self._info_section.content = ft.Column(
             spacing=8,
@@ -162,7 +188,7 @@ class SessionDetailView(ft.Column):
 
     def _on_seat_select(self, seat_num: int):
         self._selected_seat = seat_num
-        self._buy_btn.text = f"Купить билет — место {seat_num} — {int(self._session.price)} ₽"
+        self._buy_btn.text = f"Купить — место {seat_num} — {int(self._session.price)} ₽"
         self._buy_btn.disabled = False
         self._buy_btn.on_click = self._do_buy
         self.update()
@@ -171,25 +197,71 @@ class SessionDetailView(ft.Column):
         if not self._selected_seat:
             return
 
+        if not self._app_state.is_logged_in:
+            phone = self._phone_field.value.strip() or None
+            email = self._email_field.value.strip() or None
+            if not phone and not email:
+                self._show_snackbar("Укажите телефон или email")
+                return
+        else:
+            phone = None
+            email = None
+
         self._buy_btn.disabled = True
         self._buy_btn.text = "Покупка..."
         self.update()
 
         try:
-            ticket = self._tickets_api.buy(self._session_id, self._selected_seat)
-            self._show_snackbar(f"Билет куплен! Место {ticket.seat_number}")
+            ticket = self._tickets_api.buy(self._session_id, self._selected_seat, phone=phone, email=email)
+            self._show_buy_result(ticket)
             if self._on_ticket_bought:
                 self._on_ticket_bought()
-            self._on_back()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
             self._buy_btn.disabled = False
-            self._buy_btn.text = f"Купить билет — место {self._selected_seat}"
+            self._buy_btn.text = f"Купить — место {self._selected_seat}"
             self.update()
         except Exception as ex:
             self._show_snackbar(f"Ошибка: {ex}")
             self._buy_btn.disabled = False
             self.update()
+
+    def _show_buy_result(self, ticket: Ticket):
+        self._buy_btn.visible = False
+        self._seat_container.visible = False
+        self._contact_column.visible = False
+
+        qr_row = ft.Container()
+        if ticket.qr_token:
+            qr_row = ft.Container(
+                padding=16,
+                border_radius=8,
+                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                content=ft.Column(
+                    spacing=8,
+                    alignment=ft.CrossAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        ft.Icon(ft.Icons.QR_CODE_2, size=120, color=ft.Colors.PRIMARY),
+                        ft.Text(ticket.qr_token, size=12, color=ft.Colors.ON_SURFACE_VARIANT, text_align=ft.TextAlign.CENTER, selectable=True),
+                        ft.Text("Сохраните этот код", size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                    ],
+                ),
+            )
+
+        self._result_section.content = ft.Column(
+            spacing=12,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Icon(ft.Icons.CHECK_CIRCLE, size=48, color=ft.Colors.GREEN),
+                ft.Text("Билет куплен!", size=20, weight=ft.FontWeight.BOLD),
+                ft.Text(f"Место {ticket.seat_number}", size=16),
+                qr_row,
+                ft.OutlinedButton("Назад", icon=ft.Icons.ARROW_BACK, on_click=lambda _: self._on_back()),
+            ],
+        )
+        self._result_section.visible = True
+        self.update()
 
     def _show_snackbar(self, msg: str):
         if self.page:

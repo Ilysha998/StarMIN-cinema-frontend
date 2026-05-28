@@ -5,14 +5,19 @@ from typing import Optional, List
 class Ticket(BaseModel):
     id: int
     session_id: int
-    user_id: int
+    user_id: Optional[int] = None
     seat_number: int
     is_paid: bool
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    qr_token: Optional[str] = None
 
 
 class TicketCreate(BaseModel):
     session_id: int = Field(..., gt=0)
     seat_number: int = Field(..., gt=0)
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class TicketUpdate(BaseModel):

@@ -34,9 +34,9 @@ class TicketsApi:
         result = self.client.get("/tickets/statistics/sales")
         return SalesStatistics(**result)
 
-    def buy(self, session_id: int, seat_number: int) -> Ticket:
-        data = TicketCreate(session_id=session_id, seat_number=seat_number)
-        result = self.client.post("/tickets", json=data.model_dump())
+    def buy(self, session_id: int, seat_number: int, phone: Optional[str] = None, email: Optional[str] = None) -> Ticket:
+        data = TicketCreate(session_id=session_id, seat_number=seat_number, phone=phone, email=email)
+        result = self.client.post("/tickets", json=data.model_dump(exclude_none=True))
         return Ticket(**result)
 
     def update(self, ticket_id: int, ticket: TicketUpdate) -> Ticket:
