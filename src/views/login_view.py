@@ -23,70 +23,61 @@ class LoginView(ft.Column):
             password=True,
             can_reveal_password=True,
         )
+        self._reg_login_field = ft.TextField(
+            label="Логин",
+            prefix_icon=ft.Icons.PERSON,
+        )
         self._reg_password_field = ft.TextField(
             label="Пароль",
             prefix_icon=ft.Icons.LOCK,
             password=True,
             can_reveal_password=True,
         )
-        self._reg_login_field = ft.TextField(
-            label="Логин",
-            prefix_icon=ft.Icons.PERSON,
-            autofocus=True,
-        )
         self._is_admin_check = ft.Checkbox(label="Администратор", value=False)
         self._status_text = ft.Text("", color=ft.Colors.ERROR, size=13)
-        self._reg_status_text = ft.Text("", color=ft.Colors.ERROR, size=13)
         self._loading = ft.ProgressBar(visible=False, bar_height=2)
 
-        login_tab = ft.Column(
-            spacing=12,
-            controls=[
-                ft.Text("Вход", size=24, weight=ft.FontWeight.BOLD),
-                self._login_field,
-                self._password_field,
-                self._status_text,
-                ft.Button(
-                    "Войти",
-                    icon=ft.Icons.LOGIN,
-                    on_click=self._do_login,
-                    style=ft.ButtonStyle(
-                        bgcolor=ft.Colors.PRIMARY,
-                        color=ft.Colors.ON_PRIMARY,
-                    ),
-                ),
-            ],
-        )
+        self._login_form = ft.Column(spacing=12, controls=[
+            ft.Text("Вход", size=24, weight=ft.FontWeight.BOLD),
+            self._login_field,
+            self._password_field,
+            self._status_text,
+            ft.Button(
+                "Войти",
+                icon=ft.Icons.LOGIN,
+                on_click=self._do_login,
+                style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
+            ),
+            ft.TextButton(
+                "Нет аккаунта? Зарегистрироваться",
+                on_click=lambda _: self._show_register(),
+            ),
+        ])
 
-        register_tab = ft.Column(
-            spacing=12,
-            controls=[
-                ft.Text("Регистрация", size=24, weight=ft.FontWeight.BOLD),
-                self._reg_login_field,
-                self._reg_password_field,
-                self._is_admin_check,
-                self._reg_status_text,
-                ft.Button(
-                    "Зарегистрироваться",
-                    icon=ft.Icons.PERSON_ADD,
-                    on_click=self._do_register,
-                    style=ft.ButtonStyle(
-                        bgcolor=ft.Colors.PRIMARY,
-                        color=ft.Colors.ON_PRIMARY,
-                    ),
-                ),
-            ],
-        )
+        self._register_form = ft.Column(spacing=12, controls=[
+            ft.Text("Регистрация", size=24, weight=ft.FontWeight.BOLD),
+            self._reg_login_field,
+            self._reg_password_field,
+            self._is_admin_check,
+            self._status_text,
+            ft.Button(
+                "Зарегистрироваться",
+                icon=ft.Icons.PERSON_ADD,
+                on_click=self._do_register,
+                style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
+            ),
+            ft.TextButton(
+                "Уже есть аккаунт? Войти",
+                on_click=lambda _: self._show_login(),
+            ),
+        ])
 
-        tabs = ft.Tabs(
-            content=ft.Column([
-                ft.Tab(label="Вход"),
-                ft.Container(content=login_tab, padding=16),
-                ft.Tab(label="Регистрация"),
-                ft.Container(content=register_tab, padding=16),
-            ]),
-            length=2,
-            expand=True,
+        self._card = ft.Container(
+            width=380,
+            padding=24,
+            border_radius=16,
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            content=self._login_form,
         )
 
         super().__init__(
@@ -95,19 +86,23 @@ class LoginView(ft.Column):
                 ft.Container(
                     alignment=ft.alignment.Alignment(0, 0),
                     expand=True,
-                    content=ft.Container(
-                        width=400,
-                        padding=24,
-                        border_radius=16,
-                        bgcolor=ft.Colors.SURFACE_CONTAINER,
-                        content=tabs,
-                    ),
+                    content=self._card,
                 ),
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             expand=True,
         )
+
+    def _show_login(self):
+        self._status_text.value = ""
+        self._card.content = self._login_form
+        self.update()
+
+    def _show_register(self):
+        self._status_text.value = ""
+        self._card.content = self._register_form
+        self.update()
 
     def _show_loading(self, show: bool):
         self._loading.visible = show
@@ -146,30 +141,32 @@ class LoginView(ft.Column):
         login = self._reg_login_field.value.strip()
         password = self._reg_password_field.value
         if not login or not password:
-            self._reg_status_text.value = "Введите логин и пароль"
-            self._reg_status_text.color = ft.Colors.ERROR
+            self._status_text.value = "Введите логин и пароль"
+            self._status_text.color = ft.Colors.ERROR
             self.update()
             return
         if len(password) < 6:
-            self._reg_status_text.value = "Пароль минимум 6 символов"
-            self._reg_status_text.color = ft.Colors.ERROR
+            self._status_text.value = "Пароль минимум 6 символов"
+            self._status_text.color = ft.Colors.ERROR
             self.update()
             return
 
         self._show_loading(True)
-        self._reg_status_text.value = ""
+        self._status_text.value = ""
         self.update()
 
         try:
             self._auth_api.register(login, password, self._is_admin_check.value)
-            self._reg_status_text.value = "Регистрация успешна! Войдите."
-            self._reg_status_text.color = ft.Colors.GREEN
+            self._status_text.value = "Успешно! Войдите."
+            self._status_text.color = ft.Colors.GREEN
+            self._card.content = self._login_form
+            self._login_field.value = login
         except ApiError as ex:
-            self._reg_status_text.value = ex.detail
-            self._reg_status_text.color = ft.Colors.ERROR
+            self._status_text.value = ex.detail
+            self._status_text.color = ft.Colors.ERROR
         except Exception as ex:
-            self._reg_status_text.value = f"Ошибка подключения: {ex}"
-            self._reg_status_text.color = ft.Colors.ERROR
+            self._status_text.value = f"Ошибка подключения: {ex}"
+            self._status_text.color = ft.Colors.ERROR
         finally:
             self._show_loading(False)
             self.update()

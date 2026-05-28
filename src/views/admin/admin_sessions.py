@@ -68,8 +68,8 @@ class AdminSessionsView(ft.Column):
         self.update()
 
         try:
-            self._movies = self._movies_api.get_all(skip=0, limit=200)
-            self._sessions = self._sessions_api.get_all(skip=0, limit=200)
+            self._movies = self._movies_api.get_all(skip=0, limit=100)
+            self._sessions = self._sessions_api.get_all(skip=0, limit=100)
             self._render()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")

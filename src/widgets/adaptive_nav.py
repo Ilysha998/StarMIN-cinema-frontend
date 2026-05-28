@@ -2,15 +2,15 @@ import flet as ft
 from typing import Callable
 
 
-NAV_MOVIES = 0
-NAV_SESSIONS = 1
+NAV_BILLBOARD = 0
+NAV_FILMS = 1
 NAV_TICKETS = 2
 NAV_PROFILE = 3
 NAV_ADMIN = 4
 
 _ICONS = [
-    (ft.Icons.MOVIE, "Фильмы"),
-    (ft.Icons.ACCESS_TIME, "Сеансы"),
+    (ft.Icons.ACCESS_TIME, "Афиша"),
+    (ft.Icons.LOCAL_MOVIES, "Фильмы"),
     (ft.Icons.CONFIRMATION_NUMBER, "Билеты"),
     (ft.Icons.PERSON, "Профиль"),
     (ft.Icons.ADMIN_PANEL_SETTINGS, "Админ"),
