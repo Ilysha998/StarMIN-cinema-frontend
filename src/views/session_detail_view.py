@@ -11,6 +11,7 @@ from widgets.seat_grid import SeatGrid
 from utils.ticket_utils import generate_qr_bytes, generate_ticket_pdf
 from typing import Callable, Optional
 from datetime import datetime as _dt
+import re
 
 
 HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
@@ -51,17 +52,21 @@ class SessionDetailView(ft.Column):
 
         self._step_content = ft.Container(padding=ft.padding.Padding(16, 0, 16, 16))
 
+        self._phone_raw = ""
         self._phone_field = ft.TextField(
             label="Телефон",
             prefix_icon=ft.Icons.PHONE,
-            hint_text="+7...",
+            hint_text="+7 (___) ___-__-__",
             keyboard_type=ft.KeyboardType.PHONE,
+            on_change=self._on_phone_change,
+            max_length=18,
         )
         self._email_field = ft.TextField(
             label="Email",
             prefix_icon=ft.Icons.EMAIL,
             hint_text="mail@example.com",
             keyboard_type=ft.KeyboardType.EMAIL,
+            on_change=self._on_email_change,
         )
         self._contact_error = ft.Text("", color=ft.Colors.ERROR, size=12, visible=False)
 
@@ -257,7 +262,8 @@ class SessionDetailView(ft.Column):
             user = self._app_state.current_user
             phone_val = getattr(user, 'phone', '') or ''
             email_val = getattr(user, 'email', '') or ''
-            self._phone_field.value = phone_val
+            self._phone_raw = re.sub(r"\D", "", phone_val)
+            self._phone_field.value = self._format_phone(self._phone_raw) if self._phone_raw else ""
             self._email_field.value = email_val
         else:
             self._phone_field.value = ""
@@ -297,12 +303,74 @@ class SessionDetailView(ft.Column):
             form,
         ])
 
-    def _validate_contact(self, e=None):
-        phone = self._phone_field.value.strip() if self._phone_field.value else ""
-        email = self._email_field.value.strip() if self._email_field.value else ""
+    def _format_phone(self, raw: str) -> str:
+        raw = raw[:11]
+        if len(raw) == 0:
+            return ""
+        elif len(raw) == 1:
+            return f"+{raw}"
+        elif len(raw) <= 4:
+            return f"+{raw[0]} ({raw[1:]}"
+        elif len(raw) <= 7:
+            return f"+{raw[0]} ({raw[1:4]}) {raw[4:]}"
+        elif len(raw) <= 9:
+            return f"+{raw[0]} ({raw[1:4]}) {raw[4:7]}-{raw[7:]}"
+        else:
+            return f"+{raw[0]} ({raw[1:4]}) {raw[4:7]}-{raw[7:9]}-{raw[9:]}"
 
-        if not self._app_state.is_logged_in and not phone and not email:
+    def _on_phone_change(self, e):
+        new_digits = re.sub(r"\D", "", self._phone_field.value or "")
+        if new_digits.startswith("8"):
+            new_digits = "7" + new_digits[1:]
+        if new_digits and not new_digits.startswith("7"):
+            new_digits = "7" + new_digits
+        new_digits = new_digits[:11]
+        self._phone_raw = new_digits
+        formatted = self._format_phone(new_digits)
+        self._phone_field.value = formatted
+        self._phone_field.update()
+
+    def _get_raw_phone(self) -> str:
+        return self._phone_raw
+
+    def _is_phone_valid(self) -> bool:
+        return len(self._phone_raw) == 11
+
+    def _is_email_valid(self) -> bool:
+        val = (self._email_field.value or "").strip()
+        if not val:
+            return False
+        return bool(re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", val))
+
+    def _on_email_change(self, e):
+        val = (self._email_field.value or "").strip()
+        if val and not self._is_email_valid():
+            self._email_field.error_text = "Неверный формат email"
+        else:
+            self._email_field.error_text = ""
+        self._email_field.update()
+
+    def _validate_contact(self, e=None):
+        phone_raw = self._get_raw_phone()
+        email = (self._email_field.value or "").strip()
+
+        has_phone = len(phone_raw) == 11
+        has_email = bool(email) and self._is_email_valid()
+
+        if not self._app_state.is_logged_in and not has_phone and not has_email:
             self._contact_error.value = "Укажите хотя бы телефон или email"
+            self._contact_error.visible = True
+            self.update()
+            return
+
+        if phone_raw and not has_phone:
+            self._contact_error.value = "Телефон: 11 цифр в формате +7 (XXX) XXX-XX-XX"
+            self._contact_error.visible = True
+            self.update()
+            return
+
+        if email and not has_email:
+            self._contact_error.value = "Неверный формат email"
             self._contact_error.visible = True
             self.update()
             return
@@ -316,8 +384,8 @@ class SessionDetailView(ft.Column):
         s = self._session
         hall_name = HALL_NAMES.get(s.hall, f"Зал {s.hall}")
 
-        phone = self._phone_field.value.strip() if self._phone_field.value else "—"
-        email = self._email_field.value.strip() if self._email_field.value else "—"
+        phone = f"+{self._get_raw_phone()}" if self._is_phone_valid() else "—"
+        email = (self._email_field.value or "").strip() if self._is_email_valid() else "—"
 
         summary = ft.Container(
             padding=16,
@@ -370,11 +438,9 @@ class SessionDetailView(ft.Column):
         if not self._selected_seat:
             return
 
-        phone = self._phone_field.value.strip() if self._phone_field.value else None
-        email = self._email_field.value.strip() if self._email_field.value else None
-        if phone == "":
-            phone = None
-        if email == "":
+        phone = f"+{self._get_raw_phone()}" if self._is_phone_valid() else None
+        email = (self._email_field.value or "").strip() or None
+        if email and not self._is_email_valid():
             email = None
 
         self._progress.visible = True
