@@ -34,6 +34,8 @@ def main(page: ft.Page):
     _nav_position = ""
     _current_nav_index = NAV_BILLBOARD
     _view_stack: list = []
+    _browsing = False
+    _layout_ready = False
 
     def _setup_themes():
         page.theme = ft.Theme(
@@ -65,6 +67,7 @@ def main(page: ft.Page):
     _content_area = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO)
 
     async def _restore_session():
+        nonlocal _browsing, _layout_ready
         saved_theme = await sp.get("starmin_theme")
         if saved_theme == "light":
             page.theme_mode = ft.ThemeMode.LIGHT
@@ -87,9 +90,10 @@ def main(page: ft.Page):
                 api_client.token = None
                 await sp.remove("starmin_token")
 
+        _browsing = not app_state.is_logged_in
+        _layout_ready = True
         _build_nav()
-        if app_state.is_logged_in:
-            _navigate_to(NAV_BILLBOARD)
+        _navigate_to(NAV_BILLBOARD)
         page.update()
 
     def _build_nav():
@@ -104,43 +108,54 @@ def main(page: ft.Page):
 
     def _rebuild_layout():
         page.controls.clear()
-        if not app_state.is_logged_in:
-            page.add(LoginView(api_client, app_state, on_login=_on_login_success))
+        page.bottom_appbar = None
+
+        if not app_state.is_logged_in and not _browsing:
+            page.add(
+                ft.Container(
+                    expand=True,
+                    alignment=ft.alignment.Alignment(0, 0),
+                    content=LoginView(
+                        api_client, app_state,
+                        on_login=_on_login_success,
+                        on_skip=_on_skip_login,
+                    ),
+                )
+            )
         else:
             if _nav_position == "side":
-                page.add(
-                    ft.Row(
-                        expand=True,
-                        controls=[
-                            _nav_component,
-                            ft.VerticalDivider(width=1),
-                            _content_area,
-                        ],
-                    )
-                )
+                page.add(ft.Row(expand=True, controls=[
+                    _nav_component,
+                    ft.VerticalDivider(width=1),
+                    _content_area,
+                ]))
             else:
-                page.add(
-                    ft.Column(
-                        expand=True,
-                        controls=[
-                            _content_area,
-                        ],
-                    )
-                )
+                page.add(ft.Column(expand=True, controls=[_content_area]))
                 page.bottom_appbar = _nav_component
         page.update()
 
     async def _on_login_success():
-        nonlocal _current_nav_index
+        nonlocal _browsing, _current_nav_index
+        _browsing = False
         await sp.set("starmin_token", app_state.token)
         _view_stack.clear()
         _current_nav_index = NAV_BILLBOARD
         _build_nav()
         _navigate_to(NAV_BILLBOARD)
 
+    def _on_skip_login():
+        nonlocal _browsing, _current_nav_index
+        _browsing = True
+        _view_stack.clear()
+        _current_nav_index = NAV_BILLBOARD
+        _build_nav()
+        _navigate_to(NAV_BILLBOARD)
+
     async def _on_logout():
+        nonlocal _browsing
         app_state.clear_auth()
         api_client.token = None
+        _browsing = False
         await sp.remove("starmin_token")
         _view_stack.clear()
         _rebuild_layout()
@@ -162,7 +177,30 @@ def main(page: ft.Page):
         _current_nav_index = index
         _navigate_to(index)
 
+    def _show_login_in_content():
+        _content_area.controls.clear()
+        _content_area.controls.append(
+            ft.Container(
+                expand=True,
+                alignment=ft.alignment.Alignment(0, 0),
+                content=LoginView(
+                    api_client, app_state,
+                    on_login=_on_login_success,
+                    on_skip=_on_skip_login,
+                ),
+            )
+        )
+        _update_nav_selection()
+        page.update()
+
     def _navigate_to(index: int):
+        nonlocal _current_nav_index
+        if _browsing and index in (NAV_TICKETS, NAV_PROFILE, NAV_ADMIN):
+            _current_nav_index = index
+            _update_nav_selection()
+            _show_login_in_content()
+            return
+
         _content_area.controls.clear()
         view = None
 
@@ -214,10 +252,18 @@ def main(page: ft.Page):
             _navigate_to(prev_index)
 
     def _on_session_click(session_id: int):
-        _push_view(SessionDetailView(api_client, app_state, session_id, on_back=_pop_view, on_ticket_bought=lambda: None))
+        _push_view(SessionDetailView(
+            api_client, app_state, session_id,
+            on_back=_pop_view,
+            on_ticket_bought=lambda: None,
+        ))
 
     def _on_movie_click(movie_id: int):
-        _push_view(MovieDetailView(api_client, app_state, movie_id, on_session_click=_on_session_click, on_back=_pop_view))
+        _push_view(MovieDetailView(
+            api_client, app_state, movie_id,
+            on_session_click=_on_session_click,
+            on_back=_pop_view,
+        ))
 
     def _update_nav_selection():
         if _nav_component:
@@ -226,7 +272,8 @@ def main(page: ft.Page):
                 _nav_component.update()
 
     def _on_resize(e):
-        _build_nav()
+        if _layout_ready:
+            _build_nav()
 
     page.on_resize = _on_resize
     page.run_task(_restore_session)

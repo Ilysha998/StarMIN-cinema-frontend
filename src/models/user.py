@@ -1,22 +1,28 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 
 
 class User(BaseModel):
     id: int
     login: str
     is_admin: bool
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class UserCreate(BaseModel):
     login: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=6, max_length=255)
     is_admin: bool = False
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=6, max_length=255)
     is_admin: Optional[bool] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class TokenResponse(BaseModel):
@@ -41,3 +47,4 @@ class UserTicketInfo(BaseModel):
     hall: Optional[str] = None
     price: Optional[float] = None
     movie_title: Optional[str] = None
+    qr_token: Optional[str] = None

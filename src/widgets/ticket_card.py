@@ -19,6 +19,7 @@ class TicketCard(ft.Container):
         price = ticket_data.get("price", 0)
         is_paid = ticket_data.get("is_paid", False)
         dt_str = ticket_data.get("session_datetime", "")
+        qr_token = ticket_data.get("qr_token", "")
 
         date_display = ""
         time_display = ""
@@ -101,6 +102,19 @@ class TicketCard(ft.Container):
                         ],
                     ),
                     ft.Row(spacing=8, controls=action_controls) if action_controls else ft.Container(),
+                    ft.Container(
+                        padding=8,
+                        border_radius=6,
+                        bgcolor=ft.Colors.SURFACE_CONTAINER,
+                        visible=bool(qr_token),
+                        content=ft.Column(spacing=4, controls=[
+                            ft.Row(spacing=4, controls=[
+                                ft.Icon(ft.Icons.QR_CODE_2, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ft.Text("QR-код:", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                            ]),
+                            ft.Text(qr_token or "", size=10, color=ft.Colors.ON_SURFACE_VARIANT, selectable=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                        ]),
+                    ) if qr_token else ft.Container(),
                 ],
             ),
         )
