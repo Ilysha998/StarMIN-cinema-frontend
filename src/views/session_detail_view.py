@@ -228,7 +228,8 @@ class SessionDetailView(ft.Column):
         ])
 
         booked = [seat for seat in range(1, self._available.total_seats + 1) if seat not in self._available.available_seats]
-        grid = SeatGrid(s.hall, booked, on_seat_select=self._on_seat_select, selected_seat=self._selected_seat)
+        grid_w = int(self.page.width) - 48 if self.page else 400
+        grid = SeatGrid(s.hall, booked, on_seat_select=self._on_seat_select, selected_seat=self._selected_seat, available_width=grid_w)
 
         next_btn = ft.Button(
             "Далее" if self._selected_seat else "Выберите место",
