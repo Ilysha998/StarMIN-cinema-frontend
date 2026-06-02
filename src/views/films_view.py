@@ -41,7 +41,7 @@ class FilmCard(ft.Container):
                 controls=[
                     ft.Column(spacing=4, expand=True, controls=[
                         ft.Text(movie.title, size=16, weight=ft.FontWeight.BOLD, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                        ft.Row(spacing=12, controls=[
+                        ft.Row(spacing=12, wrap=True, controls=[
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.CATEGORY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
                                 ft.Text(movie.genre, size=13, color=ft.Colors.ON_SURFACE_VARIANT),

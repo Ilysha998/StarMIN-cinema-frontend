@@ -79,26 +79,25 @@ class AdminStatsView(ft.Column):
                         ft.Text(label, size=13, color=ft.Colors.ON_SURFACE_VARIANT),
                     ],
                 ),
-                expand=True,
             )
 
         self._stats_container.content = ft.Column(
             spacing=16,
             controls=[
-                ft.Row(
+                ft.ResponsiveRow(
                     spacing=12,
                     controls=[
-                        stat_card(ft.Icons.CONFIRMATION_NUMBER, "Всего билетов", s.total_tickets_sold, ft.Colors.PRIMARY),
-                        stat_card(ft.Icons.PAID, "Оплачено", s.paid_tickets, ft.Colors.GREEN),
-                        stat_card(ft.Icons.MONEY_OFF, "Не оплачено", s.unpaid_tickets, ft.Colors.ORANGE),
+                        ft.Container(col={"xs": 6, "sm": 4}, content=stat_card(ft.Icons.CONFIRMATION_NUMBER, "Всего билетов", s.total_tickets_sold, ft.Colors.PRIMARY)),
+                        ft.Container(col={"xs": 6, "sm": 4}, content=stat_card(ft.Icons.PAID, "Оплачено", s.paid_tickets, ft.Colors.GREEN)),
+                        ft.Container(col={"xs": 6, "sm": 4}, content=stat_card(ft.Icons.MONEY_OFF, "Не оплачено", s.unpaid_tickets, ft.Colors.ORANGE)),
                     ],
                 ),
-                ft.Row(
+                ft.ResponsiveRow(
                     spacing=12,
                     controls=[
-                        stat_card(ft.Icons.THEATERS, "Всего сеансов", s.total_sessions, ft.Colors.BLUE),
-                        stat_card(ft.Icons.PERCENT, "% оплаты", f"{s.payment_percentage}%", ft.Colors.TEAL),
-                        stat_card(ft.Icons.ANALYTICS, "Среднее/сеанс", s.average_tickets_per_session, ft.Colors.PURPLE),
+                        ft.Container(col={"xs": 6, "sm": 4}, content=stat_card(ft.Icons.THEATERS, "Всего сеансов", s.total_sessions, ft.Colors.BLUE)),
+                        ft.Container(col={"xs": 6, "sm": 4}, content=stat_card(ft.Icons.PERCENT, "% оплаты", f"{s.payment_percentage}%", ft.Colors.TEAL)),
+                        ft.Container(col={"xs": 6, "sm": 4}, content=stat_card(ft.Icons.ANALYTICS, "Среднее/сеанс", s.average_tickets_per_session, ft.Colors.PURPLE)),
                     ],
                 ),
             ],

@@ -43,6 +43,7 @@ class SessionCard(ft.Container):
                             ),
                             ft.Row(
                                 spacing=12,
+                                wrap=True,
                                 controls=[
                                     ft.Row(spacing=4, controls=[
                                         ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
@@ -52,12 +53,14 @@ class SessionCard(ft.Container):
                                         ft.Icon(ft.Icons.ACCESS_TIME, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
                                         ft.Text(time_str, size=13, color=ft.Colors.ON_SURFACE_VARIANT),
                                     ]),
-                                    ft.Container(
-                                        padding=ft.padding.Padding(6, 8, 6, 8),
-                                        border_radius=6,
-                                        bgcolor=hall_color,
-                                        content=ft.Text(hall_name, size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
-                                    ),
+                                    ft.Row(controls=[
+                                        ft.Container(
+                                            padding=ft.padding.Padding(6, 8, 6, 8),
+                                            border_radius=6,
+                                            bgcolor=hall_color,
+                                            content=ft.Text(hall_name, size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                                        ),
+                                    ]),
                                 ],
                             ),
                         ],

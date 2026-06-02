@@ -76,6 +76,7 @@ class TicketCard(ft.Container):
                     ),
                     ft.Row(
                         spacing=16,
+                        wrap=True,
                         controls=[
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
@@ -89,6 +90,7 @@ class TicketCard(ft.Container):
                     ),
                     ft.Row(
                         spacing=16,
+                        wrap=True,
                         controls=[
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.CHAIR, size=14, color=ft.Colors.ON_SURFACE_VARIANT),

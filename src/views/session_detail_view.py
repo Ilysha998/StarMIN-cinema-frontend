@@ -48,7 +48,7 @@ class SessionDetailView(ft.Column):
 
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
 
-        self._stepper = ft.Row(spacing=0, alignment=ft.MainAxisAlignment.CENTER)
+        self._stepper = ft.Row(spacing=0, alignment=ft.MainAxisAlignment.CENTER, scroll=ft.ScrollMode.ADAPTIVE)
 
         self._step_content = ft.Container(padding=ft.padding.Padding(16, 0, 16, 16))
 
@@ -181,7 +181,7 @@ class SessionDetailView(ft.Column):
 
         return ft.Column(spacing=4, controls=[
             ft.Text(movie_title, size=18, weight=ft.FontWeight.BOLD),
-            ft.Row(spacing=16, controls=[
+            ft.Row(spacing=16, wrap=True, controls=[
                 ft.Row(spacing=4, controls=[
                     ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
                     ft.Text(date_str, size=13, color=ft.Colors.ON_SURFACE_VARIANT),

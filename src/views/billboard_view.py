@@ -10,9 +10,7 @@ from typing import Callable
 from datetime import datetime, timedelta
 
 
-TILE_W = 200
 TILE_GAP = 12
-TILE_PAD = 32
 
 
 class BillboardView(ft.Column):
@@ -114,28 +112,37 @@ class BillboardView(ft.Column):
             ]
         movies_active.sort(key=lambda m: m.age_restriction)
 
-        tiles = []
-        for m in movies_active:
-            tiles.append(BillboardTile(m, sessions_by_movie.get(m.id, []), self._on_session_click))
-
-        self._empty_text.visible = not tiles
+        self._empty_text.visible = not movies_active
 
         pw = int(self.page.width) if self.page else 1100
-        avail = pw - TILE_PAD
-        cols = max(1, int(avail // (TILE_W + TILE_GAP)))
+        nav_w = 0 if pw < 800 else 220
+        content_w = pw - nav_w - 32
 
-        rows: list[ft.Row] = []
-        for i in range(0, len(tiles), cols):
-            row_tiles = tiles[i:i + cols]
-            row = ft.Row(
-                controls=row_tiles,
-                spacing=TILE_GAP,
-                alignment=ft.MainAxisAlignment.START if len(row_tiles) < cols else ft.MainAxisAlignment.START,
-            )
-            rows.append(row)
+        if content_w < 500:
+            cols = 2
+        elif content_w < 800:
+            cols = 3
+        elif content_w < 1100:
+            cols = 4
+        else:
+            cols = 5
 
-        self._tiles_container.content = ft.Column(spacing=TILE_GAP, controls=rows)
+        tile_w = max(140, (content_w - (cols - 1) * TILE_GAP) // cols)
+
+        tiles = []
+        for m in movies_active:
+            tiles.append(BillboardTile(m, sessions_by_movie.get(m.id, []), self._on_session_click, width=tile_w))
+
+        self._tiles_container.content = ft.Row(
+            wrap=True,
+            spacing=TILE_GAP,
+            run_spacing=TILE_GAP,
+            controls=tiles,
+        )
         self.update()
+
+    def on_page_resize(self):
+        self._render()
 
     def _show_snackbar(self, msg: str):
         if self.page:

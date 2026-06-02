@@ -137,26 +137,30 @@ class MovieDetailView(ft.Column):
                     content=ft.Icon(ft.Icons.MOVIE_OUTLINED, size=64, color=ft.Colors.ON_SURFACE_VARIANT),
                 ),
                 ft.Text(m.title, size=24, weight=ft.FontWeight.BOLD),
-                ft.Row(
-                    spacing=12,
+                ft.Column(
+                    spacing=4,
                     controls=[
-                        ft.Container(
-                            padding=ft.padding.Padding(4, 8, 4, 8),
-                            border_radius=6,
-                            bgcolor=age_c,
-                            content=ft.Text(f"{m.age_restriction}+", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                        ft.Row(
+                            spacing=12,
+                            controls=[
+                                ft.Container(
+                                    padding=ft.padding.Padding(4, 8, 4, 8),
+                                    border_radius=6,
+                                    bgcolor=age_c,
+                                    content=ft.Text(f"{m.age_restriction}+", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                                ),
+                                ft.Row(spacing=4, controls=[
+                                    ft.Icon(ft.Icons.CATEGORY, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
+                                    ft.Text(m.genre, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ]),
+                                ft.Row(spacing=4, controls=[
+                                    ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
+                                    ft.Text(f"{m.duration} мин", size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ]),
+                            ],
                         ),
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.CATEGORY, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(m.genre, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                        ]),
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(f"{m.duration} мин", size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                        ]),
                         today_status,
                     ],
-                    wrap=True,
                 ),
             ],
         )

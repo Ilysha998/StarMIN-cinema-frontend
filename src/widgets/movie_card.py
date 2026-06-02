@@ -43,7 +43,7 @@ class _TimeChip(ft.Container):
 
 
 class BillboardTile(ft.Container):
-    def __init__(self, movie: Movie, sessions: list[Session], on_session_click: Callable[[int], None]):
+    def __init__(self, movie: Movie, sessions: list[Session], on_session_click: Callable[[int], None], width: int = 200):
         self.movie = movie
         self._on_session_click = on_session_click
 
@@ -53,7 +53,7 @@ class BillboardTile(ft.Container):
 
         age_c = AGE_COLORS.get(movie.age_restriction, ft.Colors.GREY)
 
-        cols = 3
+        cols = 3 if width >= 200 else 2
         time_grid = ft.Column(spacing=4)
         for i in range(0, len(active), cols):
             row = ft.Row(spacing=4, controls=[
@@ -75,7 +75,7 @@ class BillboardTile(ft.Container):
         )
 
         poster = ft.Container(
-            height=180,
+            height=int(width * 0.9),
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             alignment=ft.alignment.Alignment(-1, -1),
             padding=8,
@@ -99,7 +99,7 @@ class BillboardTile(ft.Container):
         )
 
         super().__init__(
-            width=200,
+            width=width,
             border_radius=12,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             content=ft.Column(
