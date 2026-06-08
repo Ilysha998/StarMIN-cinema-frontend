@@ -40,11 +40,13 @@ class LoginRequest(BaseModel):
 
 class UserTicketInfo(BaseModel):
     id: int
-    seat_number: int
+    seat_row: int
+    seat_col: int
+    seat_type: str
+    price: float
     is_paid: bool
+    qr_token: str
     session_id: int
     session_datetime: Optional[str] = None
-    hall: Optional[str] = None
-    price: Optional[float] = None
+    hall_name: Optional[str] = None
     movie_title: Optional[str] = None
-    qr_token: Optional[str] = None

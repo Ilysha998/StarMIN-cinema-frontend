@@ -3,18 +3,18 @@ from api.client import ApiClient, ApiError
 from api.sessions import SessionsApi
 from api.tickets import TicketsApi
 from api.movies import MoviesApi
+from api.halls import HallsApi
 from models.session import SessionWithTickets
 from models.movie import Movie
-from models.ticket import AvailableSeats, Ticket, TicketUpdate
+from models.ticket import SeatMap, Ticket, TicketUpdate
+from models.hall import Hall
 from state.app_state import AppState
 from widgets.seat_grid import SeatGrid
 from utils.ticket_utils import generate_qr_bytes, generate_ticket_pdf
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, List
 from datetime import datetime as _dt
 import re
 
-
-HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
 
 STEP_SEAT = 0
 STEP_CONTACT = 1
@@ -28,23 +28,27 @@ class SessionDetailView(ft.Column):
         api_client: ApiClient,
         app_state: AppState,
         session_id: int,
-        on_back: Callable,
+        halls_map: Optional[Dict[int, str]] = None,
+        on_back: Callable = None,
         on_ticket_bought: Optional[Callable] = None,
     ):
         self._api_client = api_client
         self._app_state = app_state
         self._session_id = session_id
+        self._halls_map = halls_map or {}
         self._on_back = on_back
         self._on_ticket_bought = on_ticket_bought
         self._sessions_api = SessionsApi(api_client)
         self._tickets_api = TicketsApi(api_client)
         self._movies_api = MoviesApi(api_client)
+        self._halls_api = HallsApi(api_client)
         self._session: Optional[SessionWithTickets] = None
         self._movie: Optional[Movie] = None
-        self._available: Optional[AvailableSeats] = None
-        self._selected_seat: Optional[int] = None
+        self._seat_map: Optional[SeatMap] = None
+        self._hall: Optional[Hall] = None
+        self._selected_seats: List[tuple] = []
         self._current_step = STEP_SEAT
-        self._bought_ticket: Optional[Ticket] = None
+        self._bought_tickets: List[Ticket] = []
 
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
 
@@ -98,7 +102,12 @@ class SessionDetailView(ft.Column):
 
         try:
             self._session = self._sessions_api.get_by_id(self._session_id)
-            self._available = self._tickets_api.get_available_seats(self._session_id)
+            self._seat_map = self._tickets_api.get_seat_map(self._session_id)
+            try:
+                self._hall = self._halls_api.get_by_id(self._session.hall_id)
+                self._halls_map[self._hall.id] = self._hall.name
+            except Exception:
+                self._hall = None
             try:
                 self._movie = self._movies_api.get_by_id(self._session.movie_id)
             except Exception:
@@ -171,10 +180,15 @@ class SessionDetailView(ft.Column):
 
         self.update()
 
+    def _get_hall_name(self, hall_id: int) -> str:
+        if self._seat_map and self._seat_map.hall_name:
+            return self._seat_map.hall_name
+        return self._halls_map.get(hall_id, f"Зал {hall_id}")
+
     def _session_info_row(self) -> ft.Column:
         s = self._session
         movie_title = self._movie.title if self._movie else f"Фильм #{s.movie_id}"
-        hall_name = HALL_NAMES.get(s.hall, f"Зал {s.hall}")
+        hall_name = self._get_hall_name(s.hall_id)
         dt = s.datetime
         date_str = dt.strftime("%d %b %Y")
         time_str = dt.strftime("%H:%M")
@@ -198,9 +212,19 @@ class SessionDetailView(ft.Column):
             ]),
         ])
 
+    def _calc_total(self) -> float:
+        if not self._seat_map or not self._selected_seats:
+            return 0.0
+        total = 0.0
+        for r, c in self._selected_seats:
+            cell = self._seat_map.seat_map[r][c]
+            mult = 1.5 if cell.type == "sofa" else 1.0
+            total += self._session.price * mult
+        return total
+
     def _render_seat_step(self):
         s = self._session
-        if not s or not self._available:
+        if not s or not self._seat_map:
             return
 
         started = s.datetime <= _dt.now()
@@ -222,21 +246,24 @@ class SessionDetailView(ft.Column):
             self._step_content.content = ft.Column(spacing=12, controls=[info])
             return
 
+        sm = self._seat_map
         seats_info = ft.Row(spacing=12, controls=[
-            ft.Text(f"Свободно: {self._available.available_count}", size=13, color=ft.Colors.GREEN),
-            ft.Text(f"Занято: {self._available.booked_count}", size=13, color=ft.Colors.ON_SURFACE_VARIANT),
+            ft.Text(f"Свободно: {sm.available_count}", size=13, color=ft.Colors.GREEN),
+            ft.Text(f"Занято: {sm.booked_count}", size=13, color=ft.Colors.ON_SURFACE_VARIANT),
         ])
 
-        booked = [seat for seat in range(1, self._available.total_seats + 1) if seat not in self._available.available_seats]
         grid_w = int(self.page.width) - 48 if self.page else 400
-        grid = SeatGrid(s.hall, booked, on_seat_select=self._on_seat_select, selected_seat=self._selected_seat, available_width=grid_w)
+        grid = SeatGrid(sm, on_seats_change=self._on_seats_change, selected_seats=self._selected_seats, available_width=grid_w)
 
+        n = len(self._selected_seats)
+        total = self._calc_total()
+        next_label = f"Далее ({n} {self._seat_word(n)}, {int(total)} ₽)" if n else "Выберите места"
         next_btn = ft.Button(
-            "Далее" if self._selected_seat else "Выберите место",
+            next_label,
             icon=ft.Icons.ARROW_FORWARD,
-            disabled=self._selected_seat is None,
+            disabled=n == 0,
             style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
-            on_click=lambda _: self._go_to_contact() if self._selected_seat else None,
+            on_click=lambda _: self._go_to_contact() if self._selected_seats else None,
         )
 
         self._step_content.content = ft.Column(spacing=12, controls=[
@@ -246,8 +273,16 @@ class SessionDetailView(ft.Column):
             ft.Container(padding=8, alignment=ft.alignment.Alignment(1, 0), content=next_btn),
         ])
 
-    def _on_seat_select(self, seat_num: int):
-        self._selected_seat = seat_num
+    @staticmethod
+    def _seat_word(n: int) -> str:
+        if n % 10 == 1 and n % 100 != 11:
+            return "место"
+        elif 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+            return "места"
+        return "мест"
+
+    def _on_seats_change(self, seats: List[tuple]):
+        self._selected_seats = seats
         self._render_seat_step()
 
     def _go_to_contact(self):
@@ -256,7 +291,18 @@ class SessionDetailView(ft.Column):
 
     def _render_contact_step(self):
         info = self._session_info_row()
-        seat_text = f"Место {self._selected_seat} — {int(self._session.price)} ₽"
+        total = self._calc_total()
+        seats_desc = ", ".join(
+            f"Ряд {r+1}, Место {c+1}" for r, c in self._selected_seats
+        )
+        seat_text = f"{seats_desc} — {int(total)} ₽"
+
+        if self._selected_seats and self._seat_map:
+            for r, c in self._selected_seats:
+                cell = self._seat_map.seat_map[r][c]
+                if cell.type == "sofa":
+                    seat_text += " (диван)"
+                    break
 
         logged_in = self._app_state.is_logged_in
         if logged_in:
@@ -383,10 +429,24 @@ class SessionDetailView(ft.Column):
     def _render_payment_step(self):
         info = self._session_info_row()
         s = self._session
-        hall_name = HALL_NAMES.get(s.hall, f"Зал {s.hall}")
+        hall_name = self._get_hall_name(s.hall_id)
+        total = self._calc_total()
 
         phone = f"+{self._get_raw_phone()}" if self._is_phone_valid() else "—"
         email = (self._email_field.value or "").strip() if self._is_email_valid() else "—"
+
+        seat_rows = []
+        for r, c in self._selected_seats:
+            cell = self._seat_map.seat_map[r][c]
+            label = f"Ряд {r+1}, Место {c+1}"
+            if cell.type == "sofa":
+                label += " (диван)"
+            mult = 1.5 if cell.type == "sofa" else 1.0
+            seat_price = s.price * mult
+            seat_rows.append(ft.Row(spacing=8, controls=[
+                ft.Icon(ft.Icons.EVENT_SEAT, size=16, color=ft.Colors.PRIMARY),
+                ft.Text(f"{label} — {int(seat_price)} ₽", size=14),
+            ]))
 
         summary = ft.Container(
             padding=16,
@@ -394,10 +454,7 @@ class SessionDetailView(ft.Column):
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             content=ft.Column(spacing=8, controls=[
                 ft.Text("Итого к оплате", size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                ft.Row(spacing=8, controls=[
-                    ft.Icon(ft.Icons.EVENT_SEAT, size=16, color=ft.Colors.PRIMARY),
-                    ft.Text(f"Место {self._selected_seat}", size=14),
-                ]),
+                *seat_rows,
                 ft.Row(spacing=8, controls=[
                     ft.Icon(ft.Icons.MEETING_ROOM, size=16, color=ft.Colors.PRIMARY),
                     ft.Text(hall_name, size=14),
@@ -413,13 +470,13 @@ class SessionDetailView(ft.Column):
                 ft.Divider(height=1),
                 ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
                     ft.Text("К оплате:", size=16, weight=ft.FontWeight.BOLD),
-                    ft.Text(f"{int(s.price)} ₽", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
+                    ft.Text(f"{int(total)} ₽", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
                 ]),
             ]),
         )
 
         pay_btn = ft.Button(
-            f"Оплатить {int(s.price)} ₽",
+            f"Оплатить {int(total)} ₽",
             icon=ft.Icons.PAYMENT,
             style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
             on_click=self._do_buy,
@@ -436,7 +493,7 @@ class SessionDetailView(ft.Column):
         ])
 
     def _do_buy(self, e):
-        if not self._selected_seat:
+        if not self._selected_seats:
             return
 
         phone = f"+{self._get_raw_phone()}" if self._is_phone_valid() else None
@@ -448,9 +505,16 @@ class SessionDetailView(ft.Column):
         self.update()
 
         try:
-            ticket = self._tickets_api.buy(self._session_id, self._selected_seat, phone=phone, email=email)
-            paid_ticket = self._tickets_api.update(ticket.id, TicketUpdate(is_paid=True))
-            self._bought_ticket = paid_ticket
+            tickets = self._tickets_api.buy(
+                self._session_id,
+                seats=self._selected_seats,
+                phone=phone,
+                email=email,
+            )
+            for t in tickets:
+                if not t.is_paid:
+                    self._tickets_api.update(t.id, TicketUpdate(is_paid=True))
+            self._bought_tickets = tickets
             if self._on_ticket_bought:
                 self._on_ticket_bought()
             self._current_step = STEP_RESULT
@@ -464,94 +528,108 @@ class SessionDetailView(ft.Column):
             self.update()
 
     def _render_result_step(self):
-        ticket = self._bought_ticket
-        if not ticket:
+        if not self._bought_tickets:
             return
 
         s = self._session
         movie_title = self._movie.title if self._movie else f"Фильм #{s.movie_id}"
-        hall_name = HALL_NAMES.get(s.hall, f"Зал {s.hall}")
+        hall_name = self._get_hall_name(s.hall_id)
         dt = s.datetime
         date_str = dt.strftime("%d %b %Y")
         time_str = dt.strftime("%H:%M")
 
-        qr_control = ft.Container()
-        if ticket.qr_token:
-            try:
-                qr_bytes = generate_qr_bytes(ticket.qr_token, size=300)
-                qr_control = ft.Image(
-                    src=qr_bytes,
-                    width=220,
-                    height=220,
-                    fit=ft.BoxFit.CONTAIN,
-                )
-            except Exception:
-                pass
+        ticket_cards = []
+        for ticket in self._bought_tickets:
+            seat_label = f"Ряд {ticket.seat_row + 1}, Место {ticket.seat_col + 1}"
+            if ticket.seat_type == "sofa":
+                seat_label += " (диван)"
 
-        ticket_card = ft.Container(
-            padding=20,
-            border_radius=16,
-            bgcolor=ft.Colors.SURFACE_CONTAINER,
-            width=min(420, int(self.page.width * 0.85)) if self.page else 420,
-            content=ft.Column(
-                spacing=8,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                controls=[
-                    ft.Text("Билет куплен!", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN),
-                    ft.Divider(height=1),
-                    ft.Text(movie_title, size=16, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-                    ft.Row(spacing=16, controls=[
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(date_str, size=13),
+            qr_control = ft.Container()
+            if ticket.qr_token:
+                try:
+                    qr_bytes = generate_qr_bytes(ticket.qr_token, size=300)
+                    qr_control = ft.Image(
+                        src=qr_bytes,
+                        width=160,
+                        height=160,
+                        fit=ft.BoxFit.CONTAIN,
+                    )
+                except Exception:
+                    pass
+
+            ticket_cards.append(ft.Container(
+                padding=12,
+                border_radius=12,
+                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                content=ft.Column(
+                    spacing=4,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        ft.Row(spacing=16, controls=[
+                            ft.Row(spacing=4, controls=[
+                                ft.Icon(ft.Icons.EVENT_SEAT, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ft.Text(seat_label, size=13),
+                            ]),
+                            ft.Text(f"{int(ticket.price)} ₽", size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
                         ]),
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.ACCESS_TIME, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(time_str, size=13),
-                        ]),
+                        qr_control,
+                    ],
+                ),
+            ))
+
+        header = ft.Column(
+            spacing=8,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Text("Билеты куплены!", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN),
+                ft.Divider(height=1),
+                ft.Text(movie_title, size=16, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+                ft.Row(spacing=16, controls=[
+                    ft.Row(spacing=4, controls=[
+                        ft.Icon(ft.Icons.CALENDAR_TODAY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                        ft.Text(date_str, size=13),
                     ]),
-                    ft.Row(spacing=16, controls=[
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.MEETING_ROOM, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(hall_name, size=13),
-                        ]),
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.EVENT_SEAT, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(f"Место {ticket.seat_number}", size=13),
-                        ]),
+                    ft.Row(spacing=4, controls=[
+                        ft.Icon(ft.Icons.ACCESS_TIME, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                        ft.Text(time_str, size=13),
                     ]),
-                    ft.Text(f"{int(s.price)} ₽", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.PRIMARY),
-                    ft.Divider(height=1),
-                    qr_control,
-                ],
-            ),
+                ]),
+                ft.Row(spacing=16, controls=[
+                    ft.Row(spacing=4, controls=[
+                        ft.Icon(ft.Icons.MEETING_ROOM, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                        ft.Text(hall_name, size=13),
+                    ]),
+                    ft.Text(f"{len(self._bought_tickets)} {self._seat_word(len(self._bought_tickets))}", size=14, weight=ft.FontWeight.BOLD),
+                ]),
+            ],
         )
+
+        total_price = sum(t.price for t in self._bought_tickets)
 
         async def _save_pdf(e):
             try:
-                pdf_bytes = generate_ticket_pdf(
-                    movie_title=movie_title,
-                    date_str=date_str,
-                    time_str=time_str,
-                    hall=hall_name,
-                    seat=ticket.seat_number,
-                    price=s.price,
-                    qr_token=ticket.qr_token or "",
-                    is_paid=ticket.is_paid,
-                    phone=ticket.phone,
-                    email=ticket.email,
-                )
-                import os
-                save_dir = os.path.join(os.path.expanduser("~"), "Documents")
-                os.makedirs(save_dir, exist_ok=True)
-                save_path = os.path.join(save_dir, f"ticket_{ticket.id}.pdf")
-                with open(save_path, "wb") as f:
-                    f.write(pdf_bytes)
-                self._show_snackbar(f"Сохранено: {save_path}")
-                try:
-                    await self.page.launch_url(save_path)
-                except Exception:
-                    pass
+                for ticket in self._bought_tickets:
+                    seat_label = f"Ряд {ticket.seat_row + 1}, Место {ticket.seat_col + 1}"
+                    pdf_bytes = generate_ticket_pdf(
+                        movie_title=movie_title,
+                        date_str=date_str,
+                        time_str=time_str,
+                        hall=hall_name,
+                        seat_row=ticket.seat_row + 1,
+                        seat_col=ticket.seat_col + 1,
+                        price=ticket.price,
+                        qr_token=ticket.qr_token,
+                        is_paid=ticket.is_paid,
+                        phone=ticket.phone,
+                        email=ticket.email,
+                    )
+                    import os
+                    save_dir = os.path.join(os.path.expanduser("~"), "Documents")
+                    os.makedirs(save_dir, exist_ok=True)
+                    save_path = os.path.join(save_dir, f"ticket_{ticket.id}.pdf")
+                    with open(save_path, "wb") as f:
+                        f.write(pdf_bytes)
+                self._show_snackbar(f"Сохранено в Documents")
             except Exception as ex:
                 self._show_snackbar(f"Ошибка: {ex}")
 
@@ -559,7 +637,21 @@ class SessionDetailView(ft.Column):
             spacing=12,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                ticket_card,
+                ft.Container(
+                    padding=20,
+                    border_radius=16,
+                    bgcolor=ft.Colors.SURFACE_CONTAINER,
+                    width=min(420, int(self.page.width * 0.85)) if self.page else 420,
+                    content=ft.Column(
+                        spacing=8,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        controls=[
+                            header,
+                            ft.Divider(height=1),
+                            *ticket_cards,
+                        ],
+                    ),
+                ),
                 ft.Row(spacing=8, alignment=ft.MainAxisAlignment.CENTER, controls=[
                     ft.Button(
                         "Сохранить PDF",

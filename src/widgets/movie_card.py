@@ -2,24 +2,24 @@ import flet as ft
 from models.movie import Movie
 from models.session import Session
 from datetime import datetime, timedelta
-from typing import Callable
+from typing import Callable, Dict, Optional
 
 
 AGE_COLORS = {
     0: ft.Colors.GREEN, 6: ft.Colors.BLUE, 12: ft.Colors.ORANGE,
     16: ft.Colors.DEEP_ORANGE, 18: ft.Colors.RED,
 }
-HALL_COLORS = {"1": ft.Colors.BLUE, "2": ft.Colors.GREEN, "vip": ft.Colors.AMBER}
-HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
+HALL_COLORS: Dict[int, str] = {}
+HALL_NAMES: Dict[int, str] = {}
 
 
 class _TimeChip(ft.Container):
-    def __init__(self, session: Session, movie: Movie, on_click: Callable[[int], None] | None = None):
+    def __init__(self, session: Session, movie: Movie, halls_map: Optional[Dict[int, str]] = None, on_click: Callable[[int], None] | None = None):
         now = datetime.now()
         ended = session.datetime + timedelta(minutes=movie.duration) < now
         time_str = session.datetime.strftime("%H:%M")
-        hall_name = HALL_NAMES.get(session.hall, session.hall)
-        hall_c = HALL_COLORS.get(session.hall, ft.Colors.GREY)
+        hall_name = (halls_map or HALL_NAMES).get(session.hall_id, f"Зал {session.hall_id}")
+        hall_c = HALL_COLORS.get(session.hall_id, ft.Colors.GREY)
 
         if ended:
             super().__init__(
@@ -43,7 +43,7 @@ class _TimeChip(ft.Container):
 
 
 class BillboardTile(ft.Container):
-    def __init__(self, movie: Movie, sessions: list[Session], on_session_click: Callable[[int], None], width: int = 200):
+    def __init__(self, movie: Movie, sessions: list[Session], on_session_click: Callable[[int], None], halls_map: Optional[Dict[int, str]] = None, width: int = 200):
         self.movie = movie
         self._on_session_click = on_session_click
 
@@ -57,7 +57,7 @@ class BillboardTile(ft.Container):
         time_grid = ft.Column(spacing=4)
         for i in range(0, len(active), cols):
             row = ft.Row(spacing=4, controls=[
-                _TimeChip(active[j], movie, on_session_click)
+                _TimeChip(active[j], movie, halls_map, on_session_click)
                 for j in range(i, min(i + cols, len(active)))
             ])
             time_grid.controls.append(row)

@@ -6,7 +6,7 @@ from models.movie import Movie
 from models.session import Session
 from state.app_state import AppState
 from widgets.movie_card import BillboardTile
-from typing import Callable
+from typing import Callable, Dict, Optional
 from datetime import datetime, timedelta
 
 
@@ -14,10 +14,11 @@ TILE_GAP = 12
 
 
 class BillboardView(ft.Column):
-    def __init__(self, api_client: ApiClient, app_state: AppState, on_session_click: Callable[[int], None]):
+    def __init__(self, api_client: ApiClient, app_state: AppState, on_session_click: Callable[[int], None], halls_map: Optional[Dict[int, str]] = None):
         self._api_client = api_client
         self._app_state = app_state
         self._on_session_click = on_session_click
+        self._halls_map = halls_map or {}
         self._movies_api = MoviesApi(api_client)
         self._sessions_api = SessionsApi(api_client)
         self._movies: list[Movie] = []
@@ -131,7 +132,7 @@ class BillboardView(ft.Column):
 
         tiles = []
         for m in movies_active:
-            tiles.append(BillboardTile(m, sessions_by_movie.get(m.id, []), self._on_session_click, width=tile_w))
+            tiles.append(BillboardTile(m, sessions_by_movie.get(m.id, []), self._on_session_click, halls_map=self._halls_map, width=tile_w))
 
         self._tiles_container.content = ft.Row(
             wrap=True,

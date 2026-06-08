@@ -1,6 +1,6 @@
 from typing import List, Optional
 from api.client import ApiClient
-from models.ticket import Ticket, TicketCreate, TicketUpdate, AvailableSeats, SalesStatistics
+from models.ticket import Ticket, BuyRequest, SeatItem, TicketUpdate, SeatMap, SalesStatistics
 
 
 class TicketsApi:
@@ -26,18 +26,21 @@ class TicketsApi:
         result = self.client.get(f"/tickets/session/{session_id}")
         return [Ticket(**t) for t in result]
 
-    def get_available_seats(self, session_id: int) -> AvailableSeats:
-        result = self.client.get(f"/tickets/session/{session_id}/available-seats")
-        return AvailableSeats(**result)
+    def get_seat_map(self, session_id: int) -> SeatMap:
+        result = self.client.get(f"/tickets/session/{session_id}/seat-map")
+        return SeatMap(**result)
 
     def get_sales_statistics(self) -> SalesStatistics:
         result = self.client.get("/tickets/statistics/sales")
         return SalesStatistics(**result)
 
-    def buy(self, session_id: int, seat_number: int, phone: Optional[str] = None, email: Optional[str] = None) -> Ticket:
-        data = TicketCreate(session_id=session_id, seat_number=seat_number, phone=phone, email=email)
-        result = self.client.post("/tickets", json=data.model_dump(exclude_none=True))
-        return Ticket(**result)
+    def buy(self, session_id: int, seats: List[tuple], phone: Optional[str] = None, email: Optional[str] = None) -> List[Ticket]:
+        seat_items = [SeatItem(row=r, col=c) for r, c in seats]
+        data = BuyRequest(session_id=session_id, seats=seat_items, phone=phone, email=email)
+        result = self.client.post("/tickets/buy", json=data.model_dump(exclude_none=True))
+        if isinstance(result, list):
+            return [Ticket(**t) for t in result]
+        return [Ticket(**result)]
 
     def update(self, ticket_id: int, ticket: TicketUpdate) -> Ticket:
         result = self.client.put(f"/tickets/{ticket_id}", json=ticket.model_dump(exclude_none=True))

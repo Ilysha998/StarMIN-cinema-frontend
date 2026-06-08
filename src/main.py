@@ -13,6 +13,7 @@ from views.profile_view import ProfileView
 from views.admin.admin_movies import AdminMoviesView
 from views.admin.admin_sessions import AdminSessionsView
 from views.admin.admin_users import AdminUsersView
+from api.halls import HallsApi
 from views.admin.admin_stats import AdminStatsView
 
 from widgets.adaptive_nav import build_adaptive_nav, NAV_BILLBOARD, NAV_FILMS, NAV_TICKETS, NAV_PROFILE, NAV_ADMIN
@@ -37,6 +38,7 @@ def main(page: ft.Page):
     _browsing = False
     _layout_ready = False
     _current_view = None
+    _halls_map: dict = {}
 
     def _setup_themes():
         page.theme = ft.Theme(
@@ -93,6 +95,11 @@ def main(page: ft.Page):
 
         _browsing = not app_state.is_logged_in
         _layout_ready = True
+        try:
+            halls = HallsApi(api_client).get_all()
+            _halls_map = {h.id: h.name for h in halls}
+        except Exception:
+            _halls_map = {}
         _build_nav()
         _navigate_to(NAV_BILLBOARD)
         page.update()
@@ -206,7 +213,7 @@ def main(page: ft.Page):
         view = None
 
         if index == NAV_BILLBOARD:
-            view = BillboardView(api_client, app_state, on_session_click=_on_session_click)
+            view = BillboardView(api_client, app_state, on_session_click=_on_session_click, halls_map=_halls_map)
         elif index == NAV_FILMS:
             view = FilmsView(api_client, app_state, on_movie_click=_on_movie_click)
         elif index == NAV_TICKETS:
@@ -257,6 +264,7 @@ def main(page: ft.Page):
     def _on_session_click(session_id: int):
         _push_view(SessionDetailView(
             api_client, app_state, session_id,
+            halls_map=_halls_map,
             on_back=_pop_view,
             on_ticket_bought=lambda: None,
         ))
@@ -266,6 +274,7 @@ def main(page: ft.Page):
             api_client, app_state, movie_id,
             on_session_click=_on_session_click,
             on_back=_pop_view,
+            halls_map=_halls_map,
         ))
 
     def _update_nav_selection():

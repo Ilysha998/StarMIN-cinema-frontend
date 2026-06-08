@@ -1,8 +1,5 @@
 import flet as ft
-from typing import Callable, Optional
-
-
-HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
+from typing import Callable, Optional, Dict
 
 
 class TicketCard(ft.Container):
@@ -13,9 +10,10 @@ class TicketCard(ft.Container):
 
         tid = ticket_data.get("id", "?")
         movie_title = ticket_data.get("movie_title", "—")
-        hall = ticket_data.get("hall", "?")
-        hall_name = HALL_NAMES.get(hall, f"Зал {hall}")
-        seat = ticket_data.get("seat_number", "?")
+        hall_name = ticket_data.get("hall_name") or f"Зал ?"
+        seat_row = ticket_data.get("seat_row", 0)
+        seat_col = ticket_data.get("seat_col", 0)
+        seat_type = ticket_data.get("seat_type", "standard")
         price = ticket_data.get("price", 0)
         is_paid = ticket_data.get("is_paid", False)
         dt_str = ticket_data.get("session_datetime", "")
@@ -35,6 +33,10 @@ class TicketCard(ft.Container):
         paid_color = ft.Colors.GREEN if is_paid else ft.Colors.ORANGE
         paid_text = "Оплачен" if is_paid else "Не оплачен"
 
+        seat_label = f"Ряд {seat_row + 1}, Место {seat_col + 1}"
+        if seat_type == "sofa":
+            seat_label += " (диван)"
+
         action_controls = []
         if not is_paid and self._on_pay:
             action_controls.append(
@@ -51,7 +53,6 @@ class TicketCard(ft.Container):
                     "Отменить",
                     icon=ft.Icons.CANCEL,
                     on_click=lambda _: self._on_cancel(tid),
-                    #color=ft.Colors.ERROR,
                 ),
             )
 
@@ -94,7 +95,7 @@ class TicketCard(ft.Container):
                         controls=[
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.CHAIR, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                                ft.Text(f"Место {seat}", size=13, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ft.Text(seat_label, size=13, color=ft.Colors.ON_SURFACE_VARIANT),
                             ]),
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.MEETING_ROOM, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
