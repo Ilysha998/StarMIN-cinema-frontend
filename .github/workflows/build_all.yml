@@ -1,4 +1,4 @@
-name: Автоматическая сборка релизов DNS 2 (APK и EXE)
+name: Автоматическая сборка релизов StarMIN Cinema (APK и EXE)
 
 on:
   push:
@@ -25,12 +25,12 @@ jobs:
           - name: windows
             runner: windows-latest
             build_cmd: "flet build windows src -o build/windows"
-            artifact_path: build/dns2-windows-app.zip
+            artifact_path: build/starmin-cinema-windows-app.zip
 
           - name: apk
             runner: ubuntu-latest
             build_cmd: "flet build apk src -o build/apk"
-            artifact_path: build/dns2-android-app.apk
+            artifact_path: build/starmin-cinema-android-app.apk
 
     steps:
       - uses: actions/checkout@v4
@@ -49,19 +49,16 @@ jobs:
         shell: bash
         run: |
           uv run --with flet --with requests ${{ matrix.build_cmd }} --yes --verbose
-
       - name: Упаковка Windows в ZIP
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path build/windows -DestinationPath build/dns2-windows-app.zip
-
+          Compress-Archive -Path build/windows -DestinationPath build/starmin-cinema-windows-app.zip
       - name: Переименование APK
         if: matrix.name == 'apk'
         shell: bash
         run: |
-          mv build/apk/*.apk build/dns2-android-app.apk
-
+          mv build/apk/*.apk build/starmin-cinema-android-app.apk
       - name: Сохранение артефакта
         uses: actions/upload-artifact@v4
         with:
@@ -84,7 +81,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dns2-windows-app.zip
-            dns2-android-app.apk
+            starmin-cinema-windows-app.zip
+            starmin-cinema-android-app.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
