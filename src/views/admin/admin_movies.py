@@ -47,7 +47,11 @@ class AdminMoviesView(ft.Column):
                 self._progress,
                 ft.Container(
                     padding=16,
-                    content=ft.Column([self._table], scroll=ft.ScrollMode.AUTO),
+                    content=ft.Row(
+                        controls=[self._table],
+                        scroll=ft.ScrollMode.ALWAYS,
+                        expand=True,
+                    ),
                 ),
             ],
             expand=True,

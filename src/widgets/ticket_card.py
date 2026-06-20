@@ -1,12 +1,14 @@
 import flet as ft
 from typing import Callable, Optional, Dict
+from utils.ticket_utils import generate_qr_bytes
 
 
 class TicketCard(ft.Container):
-    def __init__(self, ticket_data: dict, on_pay: Optional[Callable[[int], None]] = None, on_cancel: Optional[Callable[[int], None]] = None):
+    def __init__(self, ticket_data: dict, on_pay: Optional[Callable[[int], None]] = None, on_cancel: Optional[Callable[[int], None]] = None, on_download: Optional[Callable[[int], None]] = None):
         self.ticket_data = ticket_data
         self._on_pay = on_pay
         self._on_cancel = on_cancel
+        self._on_download = on_download
 
         tid = ticket_data.get("id", "?")
         movie_title = ticket_data.get("movie_title", "—")
@@ -37,6 +39,19 @@ class TicketCard(ft.Container):
         if seat_type == "sofa":
             seat_label += " (диван)"
 
+        qr_image = ft.Container()
+        if qr_token:
+            try:
+                qr_bytes = generate_qr_bytes(qr_token, size=200)
+                qr_image = ft.Image(
+                    src=qr_bytes,
+                    width=120,
+                    height=120,
+                    fit=ft.BoxFit.CONTAIN,
+                )
+            except Exception:
+                qr_image = ft.Text("Ошибка QR", size=10, color=ft.Colors.ERROR)
+
         action_controls = []
         if not is_paid and self._on_pay:
             action_controls.append(
@@ -45,6 +60,15 @@ class TicketCard(ft.Container):
                     icon=ft.Icons.PAYMENT,
                     on_click=lambda _: self._on_pay(tid),
                     style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
+                ),
+            )
+        if self._on_download:
+            action_controls.append(
+                ft.Button(
+                    "Скачать билет",
+                    icon=ft.Icons.DOWNLOAD,
+                    on_click=lambda _: self._on_download(tid),
+                    style=ft.ButtonStyle(bgcolor=ft.Colors.SECONDARY, color=ft.Colors.ON_SECONDARY),
                 ),
             )
         if self._on_cancel:
@@ -110,12 +134,12 @@ class TicketCard(ft.Container):
                         border_radius=6,
                         bgcolor=ft.Colors.SURFACE_CONTAINER,
                         visible=bool(qr_token),
-                        content=ft.Column(spacing=4, controls=[
+                        content=ft.Column(spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER, controls=[
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.QR_CODE_2, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                                ft.Text("QR-код:", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ft.Text("QR-код для входа", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
                             ]),
-                            ft.Text(qr_token or "", size=10, color=ft.Colors.ON_SURFACE_VARIANT, selectable=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                            qr_image,
                         ]),
                     ) if qr_token else ft.Container(),
                 ],
