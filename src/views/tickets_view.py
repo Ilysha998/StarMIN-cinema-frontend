@@ -66,7 +66,7 @@ class TicketsView(ft.Column):
         else:
             self._empty_text.visible = False
             for t in tickets:
-                card = TicketCard(t, on_pay=self._pay_ticket, on_cancel=self._cancel_ticket)
+                card = TicketCard(t, on_pay=self._pay_ticket, on_cancel=self._cancel_ticket, on_download=self._download_ticket)
                 self._tickets_column.controls.append(card)
         self.update()
 
@@ -86,6 +86,48 @@ class TicketsView(ft.Column):
             self._load_tickets()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
+
+    def _download_ticket(self, ticket_id: int):
+        try:
+            tickets = self._tickets_api.get_all(is_paid=None, skip=0, limit=1000)
+            ticket = next((t for t in tickets if t.id == ticket_id), None)
+            if not ticket:
+                self._show_snackbar("Билет не найден")
+                return
+
+            from utils.ticket_utils import generate_ticket_pdf
+            import os
+
+            pdf_bytes = generate_ticket_pdf(
+                movie_title=ticket.get("movie_title", "—"),
+                date_str=ticket.get("session_datetime", "").split("T")[0] if ticket.get("session_datetime") else "—",
+                time_str=ticket.get("session_datetime", "").split("T")[1][:5] if ticket.get("session_datetime") else "—",
+                hall=ticket.get("hall_name", "—"),
+                seat_row=ticket.get("seat_row", 0) + 1,
+                seat_col=ticket.get("seat_col", 0) + 1,
+                price=ticket.get("price", 0),
+                qr_token=ticket.get("qr_token", ""),
+                is_paid=ticket.get("is_paid", False),
+                phone=ticket.get("phone"),
+                email=ticket.get("email"),
+            )
+
+            save_dir = os.path.join(os.path.expanduser("~"), "Documents")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, f"ticket_{ticket_id}.pdf")
+            with open(save_path, "wb") as f:
+                f.write(pdf_bytes)
+
+            self._show_snackbar(f"Сохранено: {save_path}")
+            try:
+                import asyncio
+                asyncio.run(self.page.launch_url_async(save_path))
+            except Exception:
+                pass
+
+        except Exception as ex:
+            self._show_snackbar(f"Ошибка: {ex}")
+
 
     def _show_snackbar(self, msg: str):
         if self.page:
