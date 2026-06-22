@@ -127,6 +127,7 @@ def main(page: ft.Page):
                         api_client, app_state,
                         on_login=_on_login_success,
                         on_skip=_on_skip_login,
+                        on_url_change=_on_url_change,
                     ),
                 )
             )
@@ -195,6 +196,7 @@ def main(page: ft.Page):
                     api_client, app_state,
                     on_login=_on_login_success,
                     on_skip=_on_skip_login,
+                    on_url_change=_on_url_change,
                 ),
             )
         )
