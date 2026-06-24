@@ -131,10 +131,23 @@ class MovieDetailView(ft.Column):
             controls=[
                 ft.Container(
                     height=160,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER,
                     border_radius=12,
                     alignment=ft.alignment.Alignment(0, 0),
-                    content=ft.Icon(ft.Icons.MOVIE_OUTLINED, size=64, color=ft.Colors.ON_SURFACE_VARIANT),
+                    content=ft.Stack(
+                        controls=[
+                            ft.Container(
+                                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                                border_radius=12,
+                                expand=True,
+                            ),
+                            ft.Image(
+                                src=m.banner_url or m.poster_url,
+                                fit=ft.controls.box.BoxFit.COVER,
+                                border_radius=12,
+                                expand=True,
+                            ),
+                        ],
+                    ),
                 ),
                 ft.Text(m.title, size=24, weight=ft.FontWeight.BOLD),
                 ft.Column(
