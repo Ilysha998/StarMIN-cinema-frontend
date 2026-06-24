@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from api.client import ApiClient
 from models.ticket import Ticket, BuyRequest, SeatItem, TicketUpdate, SeatMap, SalesStatistics
 
@@ -48,3 +48,7 @@ class TicketsApi:
 
     def cancel(self, ticket_id: int) -> None:
         self.client.delete(f"/tickets/{ticket_id}")
+
+    def get_by_id(self, ticket_id: int) -> Dict:
+        result = self.client.get(f"/users/me/tickets/{ticket_id}")
+        return result

@@ -4,6 +4,9 @@ from api.tickets import TicketsApi
 from state.app_state import AppState
 from widgets.ticket_card import TicketCard
 from typing import Optional
+import os
+import tempfile
+import json
 
 
 class TicketsView(ft.Column):
@@ -89,11 +92,7 @@ class TicketsView(ft.Column):
 
     def _download_ticket(self, ticket_id: int):
         try:
-            tickets = self._tickets_api.get_all(is_paid=None, skip=0, limit=1000)
-            ticket = next((t for t in tickets if t.id == ticket_id), None)
-            if not ticket:
-                self._show_snackbar("Билет не найден")
-                return
+            ticket = self._tickets_api.get_by_id(ticket_id)
 
             from utils.ticket_utils import generate_ticket_pdf
             import os
@@ -127,7 +126,6 @@ class TicketsView(ft.Column):
 
         except Exception as ex:
             self._show_snackbar(f"Ошибка: {ex}")
-
 
     def _show_snackbar(self, msg: str):
         if self.page:
