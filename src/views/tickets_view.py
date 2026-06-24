@@ -7,6 +7,7 @@ from typing import Optional
 import os
 import tempfile
 import json
+import sys
 
 
 class TicketsView(ft.Column):
@@ -91,11 +92,13 @@ class TicketsView(ft.Column):
             self._show_snackbar(f"Ошибка: {ex.detail}")
 
     def _download_ticket(self, ticket_id: int):
+        self.page.run_task(self._download_ticket_async, ticket_id)
+
+    async def _download_ticket_async(self, ticket_id: int):
         try:
             ticket = self._tickets_api.get_by_id(ticket_id)
 
             from utils.ticket_utils import generate_ticket_pdf
-            import os
 
             pdf_bytes = generate_ticket_pdf(
                 movie_title=ticket.get("movie_title", "—"),
@@ -111,21 +114,59 @@ class TicketsView(ft.Column):
                 email=ticket.get("email"),
             )
 
-            save_dir = os.path.join(os.path.expanduser("~"), "Documents")
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"ticket_{ticket_id}.pdf")
-            with open(save_path, "wb") as f:
-                f.write(pdf_bytes)
-
-            self._show_snackbar(f"Сохранено: {save_path}")
-            try:
-                import asyncio
-                asyncio.run(self.page.launch_url_async(save_path))
-            except Exception:
-                pass
+            save_path = await self._save_pdf_to_device(pdf_bytes, f"ticket_{ticket_id}.pdf")
+            if save_path:
+                self._show_snackbar(f"Сохранено: {save_path}")
+                try:
+                    await self.page.launch_url_async(save_path)
+                except Exception:
+                    pass
 
         except Exception as ex:
             self._show_snackbar(f"Ошибка: {ex}")
+
+    async def _save_pdf_to_device(self, pdf_bytes: bytes, filename: str) -> str | None:
+        if sys.platform == "android":
+            return await self._save_pdf_android(pdf_bytes, filename)
+        else:
+            return await self._save_pdf_desktop(pdf_bytes, filename)
+
+    async def _save_pdf_android(self, pdf_bytes: bytes, filename: str) -> str | None:
+        try:
+            import android.storage
+            import os
+
+            directory = android.storage.get_documents_directory()
+            save_dir = os.path.join(directory, "starmin_cinema")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, filename)
+            
+            with open(save_path, "wb") as f:
+                f.write(pdf_bytes)
+            
+            return save_path
+        except ImportError:
+            self._show_snackbar("Недостаточно прав для сохранения файлов на Android")
+            return None
+        except Exception as ex:
+            self._show_snackbar(f"Ошибка сохранения на Android: {ex}")
+            return None
+
+    async def _save_pdf_desktop(self, pdf_bytes: bytes, filename: str) -> str | None:
+        try:
+            import os
+
+            save_dir = os.path.join(os.path.expanduser("~"), "Documents")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, filename)
+            
+            with open(save_path, "wb") as f:
+                f.write(pdf_bytes)
+            
+            return save_path
+        except Exception as ex:
+            self._show_snackbar(f"Ошибка сохранения: {ex}")
+            return None
 
     def _show_snackbar(self, msg: str):
         if self.page:
