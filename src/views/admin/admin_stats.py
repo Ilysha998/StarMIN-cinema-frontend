@@ -2,6 +2,7 @@ import flet as ft
 import io
 import os
 from collections import defaultdict
+from datetime import datetime, timedelta
 from api.client import ApiClient, ApiError
 from api.tickets import TicketsApi
 from api.sessions import SessionsApi
@@ -10,12 +11,19 @@ from api.halls import HallsApi
 from state.app_state import AppState
 from models.ticket import SalesStatistics
 
-REPORT_OPTIONS = [
-    ft.dropdown.Option(key="paid_tickets", text="Оплаченные билеты"),
-    ft.dropdown.Option(key="all_tickets", text="Все билеты (оплаченные + неоплаченные)"),
-    ft.dropdown.Option(key="sessions_schedule", text="Расписание сеансов"),
-    ft.dropdown.Option(key="movies_catalog", text="Каталог фильмов"),
-    ft.dropdown.Option(key="revenue_by_hall", text="Выручка по залам"),
+
+REPORTS = [
+    ("paid_tickets", "Оплаченные билеты"),
+    ("all_tickets", "Все билеты"),
+    ("sessions_schedule", "Расписание сеансов"),
+    ("movies_catalog", "Каталог фильмов"),
+    ("revenue_by_hall", "Выручка по залам"),
+]
+
+PERIODS = [
+    ("week", "Неделя"),
+    ("month", "Месяц"),
+    ("all", "Все время"),
 ]
 
 
@@ -32,11 +40,35 @@ class AdminStatsView(ft.Column):
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
         self._stats_container = ft.Container()
 
-        self._report_type = ft.Dropdown(
-            label="Тип отчёта",
-            options=REPORT_OPTIONS,
-            value="paid_tickets",
-            width=300,
+        def _make_period_items(report_key: str, fmt: str):
+            items = []
+            for period_key, period_label in PERIODS:
+                items.append(ft.MenuItemButton(
+                    content=ft.Text(period_label),
+                    on_click=lambda _, rk=report_key, pk=period_key, f=fmt: self._do_export(rk, pk, f),
+                ))
+            return items
+
+        def _make_report_submenu(fmt: str):
+            items = []
+            for report_key, report_label in REPORTS:
+                items.append(ft.SubmenuButton(
+                    content=ft.Text(report_label),
+                    controls=_make_period_items(report_key, fmt),
+                ))
+            return items
+
+        self._menu_bar = ft.MenuBar(
+            controls=[
+                ft.SubmenuButton(
+                    content=ft.Text("Экспорт Excel"),
+                    controls=_make_report_submenu("excel"),
+                ),
+                ft.SubmenuButton(
+                    content=ft.Text("Экспорт TXT"),
+                    controls=_make_report_submenu("txt"),
+                ),
+            ],
         )
 
         super().__init__(
@@ -50,19 +82,7 @@ class AdminStatsView(ft.Column):
                         controls=[
                             ft.Text("Статистика продаж", size=24, weight=ft.FontWeight.BOLD),
                             ft.Row(spacing=8, controls=[
-                                self._report_type,
-                                ft.Button(
-                                    "Экспорт Excel",
-                                    icon=ft.Icons.TABLE_CHART,
-                                    style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN, color=ft.Colors.ON_PRIMARY),
-                                    on_click=lambda _: self._export_excel(),
-                                ),
-                                ft.Button(
-                                    "Экспорт TXT",
-                                    icon=ft.Icons.DESCRIPTION,
-                                    style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE, color=ft.Colors.ON_PRIMARY),
-                                    on_click=lambda _: self._export_txt(),
-                                ),
+                                self._menu_bar,
                                 ft.Button(
                                     "Обновить",
                                     icon=ft.Icons.REFRESH,
@@ -143,35 +163,15 @@ class AdminStatsView(ft.Column):
         )
         self.update()
 
-    def _collect_paid_tickets(self):
-        tickets = []
-        skip = 0
-        limit = 100
-        while True:
-            batch = self._tickets_api.get_all(is_paid=True, skip=skip, limit=limit)
-            if not batch:
-                break
-            tickets.extend(batch)
-            if len(batch) < limit:
-                break
-            skip += limit
-        return tickets
+    def _period_cutoff(self, period: str):
+        if period == "week":
+            return datetime.now() - timedelta(days=7)
+        elif period == "month":
+            return datetime.now() - timedelta(days=30)
+        return None
 
-    def _collect_all_tickets(self):
-        tickets = []
-        skip = 0
-        limit = 100
-        while True:
-            batch = self._tickets_api.get_all(skip=skip, limit=limit)
-            if not batch:
-                break
-            tickets.extend(batch)
-            if len(batch) < limit:
-                break
-            skip += limit
-        return tickets
-
-    def _load_sessions_map(self):
+    def _load_sessions_map(self, period: str = "all"):
+        cutoff = self._period_cutoff(period)
         sessions = []
         skip = 0
         limit = 100
@@ -183,59 +183,92 @@ class AdminStatsView(ft.Column):
             if len(batch) < limit:
                 break
             skip += limit
+        if cutoff:
+            sessions = [s for s in sessions if s.datetime >= cutoff]
         return {s.id: s for s in sessions}
 
     def _load_halls_map(self):
         halls = self._halls_api.get_all()
         return {h.id: h.name for h in halls}
 
-    def _load_movies_map(self, session_ids):
-        all_movies = self._movies_api.get_all(skip=0, limit=100)
-        return {m.id: m for m in all_movies if m.id in session_ids}
-
     def _load_movies_map_for_sessions(self, sessions):
         movie_ids = {s.movie_id for s in sessions}
         all_movies = self._movies_api.get_all(skip=0, limit=100)
         return {m.id: m for m in all_movies if m.id in movie_ids}
 
-    def _get_report_key(self):
-        return self._report_type.value or "paid_tickets"
+    def _collect_tickets(self, is_paid=None, period="all"):
+        cutoff = self._period_cutoff(period)
+        sessions_map = self._load_sessions_map(period)
+        valid_session_ids = set(sessions_map.keys())
+
+        tickets = []
+        skip = 0
+        limit = 100
+        while True:
+            kwargs = {"skip": skip, "limit": limit}
+            if is_paid is not None:
+                kwargs["is_paid"] = is_paid
+            batch = self._tickets_api.get_all(**kwargs)
+            if not batch:
+                break
+            tickets.extend(batch)
+            if len(batch) < limit:
+                break
+            skip += limit
+
+        tickets = [t for t in tickets if t.session_id in valid_session_ids]
+        return tickets, sessions_map
+
+    def _get_report_data(self, key: str, period: str):
+        if key in ("paid_tickets", "all_tickets"):
+            is_paid = True if key == "paid_tickets" else None
+            tickets, sessions_map = self._collect_tickets(is_paid=is_paid, period=period)
+            if not tickets:
+                return None
+            movies_map = self._load_movies_map_for_sessions(list(sessions_map.values()))
+            halls_map = self._load_halls_map()
+            return {"tickets": tickets, "sessions": sessions_map, "movies": movies_map, "halls": halls_map, "key": key}
+
+        elif key == "sessions_schedule":
+            sessions_map = self._load_sessions_map(period)
+            sessions = list(sessions_map.values())
+            if not sessions:
+                return None
+            movies_map = self._load_movies_map_for_sessions(sessions)
+            halls_map = self._load_halls_map()
+            return {"sessions": sessions, "movies": movies_map, "halls": halls_map, "key": key}
+
+        elif key == "movies_catalog":
+            movies = self._movies_api.get_all(skip=0, limit=100)
+            return {"movies_list": movies, "key": key}
+
+        elif key == "revenue_by_hall":
+            tickets, sessions_map = self._collect_tickets(is_paid=True, period=period)
+            if not tickets:
+                return None
+            halls_map = self._load_halls_map()
+            return {"tickets": tickets, "sessions": sessions_map, "halls": halls_map, "key": key}
+
+        return None
+
+    def _do_export(self, report_key: str, period: str, fmt: str):
+        if fmt == "excel":
+            self._export_excel(report_key, period)
+        else:
+            self._export_txt(report_key, period)
+
+    def _period_label(self, period: str):
+        for pk, pl in PERIODS:
+            if pk == period:
+                return pl
+        return "Все время"
 
     def _save_dir(self):
         d = os.path.join(os.path.expanduser("~"), "Documents")
         os.makedirs(d, exist_ok=True)
         return d
 
-    def _get_report_data(self):
-        key = self._get_report_key()
-        if key in ("paid_tickets", "all_tickets"):
-            tickets = self._collect_paid_tickets() if key == "paid_tickets" else self._collect_all_tickets()
-            if not tickets:
-                return None
-            sessions_map = self._load_sessions_map()
-            session_ids = {t.session_id for t in tickets}
-            movies_map = self._load_movies_map(session_ids)
-            halls_map = self._load_halls_map()
-            return {"tickets": tickets, "sessions": sessions_map, "movies": movies_map, "halls": halls_map, "key": key}
-        elif key == "sessions_schedule":
-            sessions_map = self._load_sessions_map()
-            sessions = list(sessions_map.values())
-            movies_map = self._load_movies_map_for_sessions(sessions)
-            halls_map = self._load_halls_map()
-            return {"sessions": sessions, "movies": movies_map, "halls": halls_map, "key": key}
-        elif key == "movies_catalog":
-            movies = self._movies_api.get_all(skip=0, limit=100)
-            return {"movies_list": movies, "key": key}
-        elif key == "revenue_by_hall":
-            tickets = self._collect_paid_tickets()
-            if not tickets:
-                return None
-            sessions_map = self._load_sessions_map()
-            halls_map = self._load_halls_map()
-            return {"tickets": tickets, "sessions": sessions_map, "halls": halls_map, "key": key}
-        return None
-
-    def _export_excel(self):
+    def _export_excel(self, report_key: str, period: str):
         self._progress.visible = True
         self.update()
 
@@ -249,7 +282,7 @@ class AdminStatsView(ft.Column):
             return
 
         try:
-            data = self._get_report_data()
+            data = self._get_report_data(report_key, period)
             if data is None:
                 self._show_snackbar("Нет данных для экспорта")
                 return
@@ -297,18 +330,18 @@ class AdminStatsView(ft.Column):
                     movie = movies_map.get(session.movie_id) if session else None
                     hall = halls_map.get(session.hall_id) if session else None
 
-                    purchase_time = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
+                    dt = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
                     hall_name = hall.name if hall else "—"
                     movie_title = movie.title if movie else "—"
-                    age_restriction = f"{movie.age_restriction}+" if movie else "—"
+                    age_r = f"{movie.age_restriction}+" if movie else "—"
                     status = "Оплачен" if ticket.is_paid else "Не оплачен"
 
                     style_cell(ws, row_idx, 1, ticket.id)
                     style_cell(ws, row_idx, 2, status)
-                    style_cell(ws, row_idx, 3, purchase_time)
+                    style_cell(ws, row_idx, 3, dt)
                     style_cell(ws, row_idx, 4, hall_name)
                     style_cell(ws, row_idx, 5, movie_title)
-                    style_cell(ws, row_idx, 6, age_restriction)
+                    style_cell(ws, row_idx, 6, age_r)
                     style_cell(ws, row_idx, 7, ticket.price, money=True)
 
                 for col_letter, w in zip("ABCDEFG", [10, 14, 20, 15, 35, 12, 12]):
@@ -382,7 +415,8 @@ class AdminStatsView(ft.Column):
                 for col_letter, w in zip("ABC", [20, 22, 18]):
                     ws.column_dimensions[col_letter].width = w
 
-            save_path = os.path.join(self._save_dir(), f"starmin_{key}.xlsx")
+            period_label = self._period_label(period).lower()
+            save_path = os.path.join(self._save_dir(), f"starmin_{key}_{period_label}.xlsx")
             buf = io.BytesIO()
             wb.save(buf)
             wb.close()
@@ -400,17 +434,19 @@ class AdminStatsView(ft.Column):
             self._progress.visible = False
             self.update()
 
-    def _export_txt(self):
+    def _export_txt(self, report_key: str, period: str):
         self._progress.visible = True
         self.update()
 
         try:
-            data = self._get_report_data()
+            data = self._get_report_data(report_key, period)
             if data is None:
                 self._show_snackbar("Нет данных для экспорта")
                 return
 
             key = data["key"]
+            period_label = self._period_label(period)
+            lines = []
 
             if key in ("paid_tickets", "all_tickets"):
                 report_name = "Оплаченные билеты" if key == "paid_tickets" else "Все билеты"
@@ -419,7 +455,7 @@ class AdminStatsView(ft.Column):
                 movies_map = data["movies"]
                 halls_map = data["halls"]
 
-                lines = [f"StarMIN Cinema — {report_name}", "=" * 60, ""]
+                lines = [f"StarMIN Cinema — {report_name} ({period_label})", "=" * 60, ""]
                 for ticket in tickets:
                     session = sessions_map.get(ticket.session_id)
                     movie = movies_map.get(session.movie_id) if session else None
@@ -445,7 +481,7 @@ class AdminStatsView(ft.Column):
                 movies_map = data["movies"]
                 halls_map = data["halls"]
 
-                lines = ["StarMIN Cinema — Расписание сеансов", "=" * 60, ""]
+                lines = [f"StarMIN Cinema — Расписание сеансов ({period_label})", "=" * 60, ""]
                 for s in sessions:
                     movie = movies_map.get(s.movie_id)
                     hall = halls_map.get(s.hall_id)
@@ -485,7 +521,7 @@ class AdminStatsView(ft.Column):
                         hall_stats[session.hall_id]["count"] += 1
                         hall_stats[session.hall_id]["revenue"] += t.price
 
-                lines = ["StarMIN Cinema — Выручка по залам", "=" * 60, ""]
+                lines = [f"StarMIN Cinema — Выручка по залам ({period_label})", "=" * 60, ""]
                 for hid, stats in sorted(hall_stats.items()):
                     hall_name = halls_map.get(hid, f"Зал {hid}")
                     lines.append(f"Зал: {hall_name}")
@@ -497,7 +533,8 @@ class AdminStatsView(ft.Column):
                 self._show_snackbar("Неизвестный тип отчёта")
                 return
 
-            save_path = os.path.join(self._save_dir(), f"starmin_{key}.txt")
+            period_slug = self._period_label(period).lower()
+            save_path = os.path.join(self._save_dir(), f"starmin_{key}_{period_slug}.txt")
             with open(save_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
 

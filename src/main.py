@@ -234,13 +234,13 @@ def main(page: ft.Page):
     def _build_admin_view():
         admin_tabs = ft.Tabs(
             content=ft.Column([
-                ft.Tab(label="Фильмы"),
+                ft.Tab(icon=ft.Icons.MOVIE_FILTER),
                 ft.Container(content=AdminMoviesView(api_client, app_state), expand=True, padding=8),
-                ft.Tab(label="Сеансы"),
+                ft.Tab(icon=ft.Icons.CALENDAR_MONTH),
                 ft.Container(content=AdminSessionsView(api_client, app_state), expand=True, padding=8),
-                ft.Tab(label="Пользователи"),
+                ft.Tab(icon=ft.Icons.PEOPLE),
                 ft.Container(content=AdminUsersView(api_client, app_state), expand=True, padding=8),
-                ft.Tab(label="Статистика"),
+                ft.Tab(icon=ft.Icons.BAR_CHART),
                 ft.Container(content=AdminStatsView(api_client, app_state), expand=True, padding=8),
             ]),
             length=4,
