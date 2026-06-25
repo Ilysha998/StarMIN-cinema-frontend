@@ -49,6 +49,13 @@ class TicketsApi:
     def cancel(self, ticket_id: int) -> None:
         self.client.delete(f"/tickets/{ticket_id}")
 
+    def refund(self, ticket_id: int, qr_token: Optional[str] = None) -> Ticket:
+        body = {}
+        if qr_token:
+            body["qr_token"] = qr_token
+        result = self.client.post(f"/tickets/{ticket_id}/refund", json=body)
+        return Ticket(**result)
+
     def get_by_id(self, ticket_id: int) -> Dict:
         result = self.client.get(f"/users/me/tickets/{ticket_id}")
         return result

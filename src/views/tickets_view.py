@@ -70,7 +70,7 @@ class TicketsView(ft.Column):
         else:
             self._empty_text.visible = False
             for t in tickets:
-                card = TicketCard(t, on_pay=self._pay_ticket, on_cancel=self._cancel_ticket, on_download=self._download_ticket)
+                card = TicketCard(t, on_pay=self._pay_ticket, on_cancel=self._cancel_ticket, on_download=self._download_ticket, on_refund=self._refund_ticket)
                 self._tickets_column.controls.append(card)
         self.update()
 
@@ -79,6 +79,14 @@ class TicketsView(ft.Column):
             from models.ticket import TicketUpdate
             self._tickets_api.update(ticket_id, TicketUpdate(is_paid=True))
             self._show_snackbar("Билет оплачен!")
+            self._load_tickets()
+        except ApiError as ex:
+            self._show_snackbar(f"Ошибка: {ex.detail}")
+
+    def _refund_ticket(self, ticket_id: int):
+        try:
+            self._tickets_api.refund(ticket_id)
+            self._show_snackbar("Деньги возвращены")
             self._load_tickets()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")

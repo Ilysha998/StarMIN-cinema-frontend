@@ -4,11 +4,12 @@ from utils.ticket_utils import generate_qr_bytes
 
 
 class TicketCard(ft.Container):
-    def __init__(self, ticket_data: dict, on_pay: Optional[Callable[[int], None]] = None, on_cancel: Optional[Callable[[int], None]] = None, on_download: Optional[Callable[[int], None]] = None):
+    def __init__(self, ticket_data: dict, on_pay: Optional[Callable[[int], None]] = None, on_cancel: Optional[Callable[[int], None]] = None, on_download: Optional[Callable[[int], None]] = None, on_refund: Optional[Callable[[int], None]] = None):
         self.ticket_data = ticket_data
         self._on_pay = on_pay
         self._on_cancel = on_cancel
         self._on_download = on_download
+        self._on_refund = on_refund
 
         tid = ticket_data.get("id", "?")
         movie_title = ticket_data.get("movie_title", "—")
@@ -18,6 +19,7 @@ class TicketCard(ft.Container):
         seat_type = ticket_data.get("seat_type", "standard")
         price = ticket_data.get("price", 0)
         is_paid = ticket_data.get("is_paid", False)
+        refunded = ticket_data.get("refunded", False)
         dt_str = ticket_data.get("session_datetime", "")
         qr_token = ticket_data.get("qr_token", "")
 
@@ -34,6 +36,10 @@ class TicketCard(ft.Container):
 
         paid_color = ft.Colors.GREEN if is_paid else ft.Colors.ORANGE
         paid_text = "Оплачен" if is_paid else "Не оплачен"
+
+        if refunded:
+            paid_color = ft.Colors.RED
+            paid_text = "Возвращён"
 
         seat_label = f"Ряд {seat_row + 1}, Место {seat_col + 1}"
         if seat_type == "sofa":
@@ -53,7 +59,7 @@ class TicketCard(ft.Container):
                 qr_image = ft.Text("Ошибка QR", size=10, color=ft.Colors.ERROR)
 
         action_controls = []
-        if not is_paid and self._on_pay:
+        if not is_paid and not refunded and self._on_pay:
             action_controls.append(
                 ft.Button(
                     "Оплатить",
@@ -62,7 +68,16 @@ class TicketCard(ft.Container):
                     style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY),
                 ),
             )
-        if self._on_download:
+        if is_paid and not refunded and self._on_refund:
+            action_controls.append(
+                ft.Button(
+                    "Вернуть деньги",
+                    icon=ft.Icons.MONEY_OFF,
+                    on_click=lambda _: self._on_refund(tid),
+                    style=ft.ButtonStyle(bgcolor=ft.Colors.ORANGE, color=ft.Colors.ON_PRIMARY),
+                ),
+            )
+        if self._on_download and not refunded:
             action_controls.append(
                 ft.Button(
                     "Скачать билет",
@@ -71,7 +86,7 @@ class TicketCard(ft.Container):
                     style=ft.ButtonStyle(bgcolor=ft.Colors.SECONDARY, color=ft.Colors.ON_SECONDARY),
                 ),
             )
-        if self._on_cancel:
+        if self._on_cancel and not is_paid and not refunded:
             action_controls.append(
                 ft.OutlinedButton(
                     "Отменить",

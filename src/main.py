@@ -215,7 +215,7 @@ def main(page: ft.Page):
         view = None
 
         if index == NAV_BILLBOARD:
-            view = BillboardView(api_client, app_state, on_session_click=_on_session_click, halls_map=_halls_map)
+            view = BillboardView(api_client, app_state, on_session_click=_on_session_click, on_movie_click=_on_movie_click, halls_map=_halls_map)
         elif index == NAV_FILMS:
             view = FilmsView(api_client, app_state, on_movie_click=_on_movie_click)
         elif index == NAV_TICKETS:

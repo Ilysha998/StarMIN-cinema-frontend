@@ -1,5 +1,7 @@
 import flet as ft
 import io
+import os
+from collections import defaultdict
 from api.client import ApiClient, ApiError
 from api.tickets import TicketsApi
 from api.sessions import SessionsApi
@@ -7,6 +9,14 @@ from api.movies import MoviesApi
 from api.halls import HallsApi
 from state.app_state import AppState
 from models.ticket import SalesStatistics
+
+REPORT_OPTIONS = [
+    ft.dropdown.Option(key="paid_tickets", text="Оплаченные билеты"),
+    ft.dropdown.Option(key="all_tickets", text="Все билеты (оплаченные + неоплаченные)"),
+    ft.dropdown.Option(key="sessions_schedule", text="Расписание сеансов"),
+    ft.dropdown.Option(key="movies_catalog", text="Каталог фильмов"),
+    ft.dropdown.Option(key="revenue_by_hall", text="Выручка по залам"),
+]
 
 
 class AdminStatsView(ft.Column):
@@ -22,6 +32,13 @@ class AdminStatsView(ft.Column):
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
         self._stats_container = ft.Container()
 
+        self._report_type = ft.Dropdown(
+            label="Тип отчёта",
+            options=REPORT_OPTIONS,
+            value="paid_tickets",
+            width=300,
+        )
+
         super().__init__(
             scroll=ft.ScrollMode.AUTO,
             spacing=8,
@@ -33,11 +50,18 @@ class AdminStatsView(ft.Column):
                         controls=[
                             ft.Text("Статистика продаж", size=24, weight=ft.FontWeight.BOLD),
                             ft.Row(spacing=8, controls=[
+                                self._report_type,
                                 ft.Button(
                                     "Экспорт Excel",
                                     icon=ft.Icons.TABLE_CHART,
                                     style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN, color=ft.Colors.ON_PRIMARY),
                                     on_click=lambda _: self._export_excel(),
+                                ),
+                                ft.Button(
+                                    "Экспорт TXT",
+                                    icon=ft.Icons.DESCRIPTION,
+                                    style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE, color=ft.Colors.ON_PRIMARY),
+                                    on_click=lambda _: self._export_txt(),
                                 ),
                                 ft.Button(
                                     "Обновить",
@@ -119,120 +143,366 @@ class AdminStatsView(ft.Column):
         )
         self.update()
 
+    def _collect_paid_tickets(self):
+        tickets = []
+        skip = 0
+        limit = 100
+        while True:
+            batch = self._tickets_api.get_all(is_paid=True, skip=skip, limit=limit)
+            if not batch:
+                break
+            tickets.extend(batch)
+            if len(batch) < limit:
+                break
+            skip += limit
+        return tickets
+
+    def _collect_all_tickets(self):
+        tickets = []
+        skip = 0
+        limit = 100
+        while True:
+            batch = self._tickets_api.get_all(skip=skip, limit=limit)
+            if not batch:
+                break
+            tickets.extend(batch)
+            if len(batch) < limit:
+                break
+            skip += limit
+        return tickets
+
+    def _load_sessions_map(self):
+        sessions = []
+        skip = 0
+        limit = 100
+        while True:
+            batch = self._sessions_api.get_all(skip=skip, limit=limit)
+            if not batch:
+                break
+            sessions.extend(batch)
+            if len(batch) < limit:
+                break
+            skip += limit
+        return {s.id: s for s in sessions}
+
+    def _load_halls_map(self):
+        halls = self._halls_api.get_all()
+        return {h.id: h.name for h in halls}
+
+    def _load_movies_map(self, session_ids):
+        all_movies = self._movies_api.get_all(skip=0, limit=100)
+        return {m.id: m for m in all_movies if m.id in session_ids}
+
+    def _load_movies_map_for_sessions(self, sessions):
+        movie_ids = {s.movie_id for s in sessions}
+        all_movies = self._movies_api.get_all(skip=0, limit=100)
+        return {m.id: m for m in all_movies if m.id in movie_ids}
+
+    def _get_report_key(self):
+        return self._report_type.value or "paid_tickets"
+
+    def _save_dir(self):
+        d = os.path.join(os.path.expanduser("~"), "Documents")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _get_report_data(self):
+        key = self._get_report_key()
+        if key in ("paid_tickets", "all_tickets"):
+            tickets = self._collect_paid_tickets() if key == "paid_tickets" else self._collect_all_tickets()
+            if not tickets:
+                return None
+            sessions_map = self._load_sessions_map()
+            session_ids = {t.session_id for t in tickets}
+            movies_map = self._load_movies_map(session_ids)
+            halls_map = self._load_halls_map()
+            return {"tickets": tickets, "sessions": sessions_map, "movies": movies_map, "halls": halls_map, "key": key}
+        elif key == "sessions_schedule":
+            sessions_map = self._load_sessions_map()
+            sessions = list(sessions_map.values())
+            movies_map = self._load_movies_map_for_sessions(sessions)
+            halls_map = self._load_halls_map()
+            return {"sessions": sessions, "movies": movies_map, "halls": halls_map, "key": key}
+        elif key == "movies_catalog":
+            movies = self._movies_api.get_all(skip=0, limit=100)
+            return {"movies_list": movies, "key": key}
+        elif key == "revenue_by_hall":
+            tickets = self._collect_paid_tickets()
+            if not tickets:
+                return None
+            sessions_map = self._load_sessions_map()
+            halls_map = self._load_halls_map()
+            return {"tickets": tickets, "sessions": sessions_map, "halls": halls_map, "key": key}
+        return None
+
     def _export_excel(self):
         self._progress.visible = True
         self.update()
 
         try:
-            tickets = []
-            skip = 0
-            limit = 100
-            while True:
-                batch = self._tickets_api.get_all(is_paid=True, skip=skip, limit=limit)
-                if not batch:
-                    break
-                tickets.extend(batch)
-                if len(batch) < limit:
-                    break
-                skip += limit
-            if not tickets:
-                self._show_snackbar("Нет оплаченных билетов для экспорта")
-                return
-
-            session_ids = list({t.session_id for t in tickets})
-            sessions_map = {}
-            for sid in session_ids:
-                try:
-                    s = self._sessions_api.get_by_id(sid)
-                    sessions_map[sid] = s
-                except Exception:
-                    pass
-
-            movie_ids = list({s.movie_id for s in sessions_map.values()})
-            movies_map = {}
-            for mid in movie_ids:
-                try:
-                    m = self._movies_api.get_by_id(mid)
-                    movies_map[mid] = m
-                except Exception:
-                    pass
-
-            hall_ids = list({s.hall_id for s in sessions_map.values()})
-            halls_map = {}
-            for hid in hall_ids:
-                try:
-                    h = self._halls_api.get_by_id(hid)
-                    halls_map[hid] = h
-                except Exception:
-                    pass
-
             from openpyxl import Workbook
             from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        except ImportError:
+            self._show_snackbar("Ошибка: openpyxl не установлен")
+            self._progress.visible = False
+            self.update()
+            return
+
+        try:
+            data = self._get_report_data()
+            if data is None:
+                self._show_snackbar("Нет данных для экспорта")
+                return
+
+            key = data["key"]
 
             wb = Workbook()
             ws = wb.active
-            ws.title = "Оплаченные билеты"
 
-            headers = ["ID билета", "Дата покупки", "Зал", "Фильм", "Возраст+", "Цена"]
             header_font = Font(bold=True, color="FFFFFF", size=11)
             header_fill = PatternFill(start_color="3F51B5", end_color="3F51B5", fill_type="solid")
             header_align = Alignment(horizontal="center", vertical="center")
             thin_border = Border(
-                left=Side(style="thin"),
-                right=Side(style="thin"),
-                top=Side(style="thin"),
-                bottom=Side(style="thin"),
+                left=Side(style="thin"), right=Side(style="thin"),
+                top=Side(style="thin"), bottom=Side(style="thin"),
             )
 
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col, value=header)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = header_align
-                cell.border = thin_border
+            def style_header(ws_ref, headers):
+                for col, h in enumerate(headers, 1):
+                    c = ws_ref.cell(row=1, column=col, value=h)
+                    c.font = header_font
+                    c.fill = header_fill
+                    c.alignment = header_align
+                    c.border = thin_border
 
-            for row_idx, ticket in enumerate(tickets, 2):
-                session = sessions_map.get(ticket.session_id)
-                movie = movies_map.get(session.movie_id) if session else None
-                hall = halls_map.get(session.hall_id) if session else None
+            def style_cell(ws_ref, row, col, value, money=False):
+                c = ws_ref.cell(row=row, column=col, value=value)
+                c.border = thin_border
+                if money:
+                    c.number_format = '#,##0.00'
+                    c.alignment = Alignment(horizontal="right")
 
-                purchase_time = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
-                hall_name = hall.name if hall else "—"
-                movie_title = movie.title if movie else "—"
-                age_restriction = f"{movie.age_restriction}+" if movie else "—"
-                price = ticket.price
+            if key in ("paid_tickets", "all_tickets"):
+                ws.title = "Оплаченные билеты" if key == "paid_tickets" else "Все билеты"
+                headers = ["ID билета", "Статус", "Дата сеанса", "Зал", "Фильм", "Возраст+", "Цена"]
+                style_header(ws, headers)
 
-                row_data = [ticket.id, purchase_time, hall_name, movie_title, age_restriction, price]
-                for col, value in enumerate(row_data, 1):
-                    cell = ws.cell(row=row_idx, column=col, value=value)
-                    cell.border = thin_border
-                    if col == 6:
-                        cell.number_format = '#,##0.00'
-                        cell.alignment = Alignment(horizontal="right")
+                tickets = data["tickets"]
+                sessions_map = data["sessions"]
+                movies_map = data["movies"]
+                halls_map = data["halls"]
 
-            ws.column_dimensions['A'].width = 10
-            ws.column_dimensions['B'].width = 20
-            ws.column_dimensions['C'].width = 15
-            ws.column_dimensions['D'].width = 35
-            ws.column_dimensions['E'].width = 12
-            ws.column_dimensions['F'].width = 12
+                for row_idx, ticket in enumerate(tickets, 2):
+                    session = sessions_map.get(ticket.session_id)
+                    movie = movies_map.get(session.movie_id) if session else None
+                    hall = halls_map.get(session.hall_id) if session else None
 
+                    purchase_time = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
+                    hall_name = hall.name if hall else "—"
+                    movie_title = movie.title if movie else "—"
+                    age_restriction = f"{movie.age_restriction}+" if movie else "—"
+                    status = "Оплачен" if ticket.is_paid else "Не оплачен"
+
+                    style_cell(ws, row_idx, 1, ticket.id)
+                    style_cell(ws, row_idx, 2, status)
+                    style_cell(ws, row_idx, 3, purchase_time)
+                    style_cell(ws, row_idx, 4, hall_name)
+                    style_cell(ws, row_idx, 5, movie_title)
+                    style_cell(ws, row_idx, 6, age_restriction)
+                    style_cell(ws, row_idx, 7, ticket.price, money=True)
+
+                for col_letter, w in zip("ABCDEFG", [10, 14, 20, 15, 35, 12, 12]):
+                    ws.column_dimensions[col_letter].width = w
+
+            elif key == "sessions_schedule":
+                ws.title = "Расписание сеансов"
+                headers = ["ID сеанса", "Дата/Время", "Фильм", "Возраст+", "Зал", "Цена"]
+                style_header(ws, headers)
+
+                sessions = sorted(data["sessions"], key=lambda s: s.datetime)
+                movies_map = data["movies"]
+                halls_map = data["halls"]
+
+                for row_idx, s in enumerate(sessions, 2):
+                    movie = movies_map.get(s.movie_id)
+                    hall = halls_map.get(s.hall_id)
+
+                    dt_str = s.datetime.strftime("%d.%m.%Y %H:%M")
+                    movie_title = movie.title if movie else "—"
+                    age_r = f"{movie.age_restriction}+" if movie else "—"
+                    hall_name = hall.name if hall else "—"
+
+                    style_cell(ws, row_idx, 1, s.id)
+                    style_cell(ws, row_idx, 2, dt_str)
+                    style_cell(ws, row_idx, 3, movie_title)
+                    style_cell(ws, row_idx, 4, age_r)
+                    style_cell(ws, row_idx, 5, hall_name)
+                    style_cell(ws, row_idx, 6, s.price, money=True)
+
+                for col_letter, w in zip("ABCDEF", [10, 20, 35, 12, 15, 12]):
+                    ws.column_dimensions[col_letter].width = w
+
+            elif key == "movies_catalog":
+                ws.title = "Каталог фильмов"
+                headers = ["ID", "Название", "Жанр", "Длительность (мин)", "Возраст+"]
+                style_header(ws, headers)
+
+                for row_idx, m in enumerate(data["movies_list"], 2):
+                    style_cell(ws, row_idx, 1, m.id)
+                    style_cell(ws, row_idx, 2, m.title)
+                    style_cell(ws, row_idx, 3, m.genre)
+                    style_cell(ws, row_idx, 4, m.duration)
+                    style_cell(ws, row_idx, 5, f"{m.age_restriction}+")
+
+                for col_letter, w in zip("ABCDE", [8, 35, 18, 18, 12]):
+                    ws.column_dimensions[col_letter].width = w
+
+            elif key == "revenue_by_hall":
+                ws.title = "Выручка по залам"
+                headers = ["Зал", "Оплаченных билетов", "Сумма выручки"]
+                style_header(ws, headers)
+
+                tickets = data["tickets"]
+                sessions_map = data["sessions"]
+                halls_map = data["halls"]
+
+                hall_stats: dict[int, dict] = defaultdict(lambda: {"count": 0, "revenue": 0.0})
+                for t in tickets:
+                    session = sessions_map.get(t.session_id)
+                    if session:
+                        hall_stats[session.hall_id]["count"] += 1
+                        hall_stats[session.hall_id]["revenue"] += t.price
+
+                for row_idx, (hid, stats) in enumerate(sorted(hall_stats.items()), 2):
+                    hall_name = halls_map.get(hid, f"Зал {hid}")
+                    style_cell(ws, row_idx, 1, hall_name)
+                    style_cell(ws, row_idx, 2, stats["count"])
+                    style_cell(ws, row_idx, 3, stats["revenue"], money=True)
+
+                for col_letter, w in zip("ABC", [20, 22, 18]):
+                    ws.column_dimensions[col_letter].width = w
+
+            save_path = os.path.join(self._save_dir(), f"starmin_{key}.xlsx")
             buf = io.BytesIO()
             wb.save(buf)
             wb.close()
             buf.seek(0)
-
-            import os
-            save_dir = os.path.join(os.path.expanduser("~"), "Documents")
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, "starmin_paid_tickets.xlsx")
             with open(save_path, "wb") as f:
                 f.write(buf.getvalue())
 
             self._show_snackbar(f"Экспортировано: {save_path}")
 
-        except ImportError:
-            self._show_snackbar("Ошибка: openpyxl не установлен")
+        except ApiError as ex:
+            self._show_snackbar(f"Ошибка API: {ex.detail}")
+        except Exception as ex:
+            self._show_snackbar(f"Ошибка: {ex}")
+        finally:
+            self._progress.visible = False
+            self.update()
+
+    def _export_txt(self):
+        self._progress.visible = True
+        self.update()
+
+        try:
+            data = self._get_report_data()
+            if data is None:
+                self._show_snackbar("Нет данных для экспорта")
+                return
+
+            key = data["key"]
+
+            if key in ("paid_tickets", "all_tickets"):
+                report_name = "Оплаченные билеты" if key == "paid_tickets" else "Все билеты"
+                tickets = data["tickets"]
+                sessions_map = data["sessions"]
+                movies_map = data["movies"]
+                halls_map = data["halls"]
+
+                lines = [f"StarMIN Cinema — {report_name}", "=" * 60, ""]
+                for ticket in tickets:
+                    session = sessions_map.get(ticket.session_id)
+                    movie = movies_map.get(session.movie_id) if session else None
+                    hall = halls_map.get(session.hall_id) if session else None
+
+                    dt = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
+                    hall_name = hall.name if hall else "—"
+                    title = movie.title if movie else "—"
+                    age = f"{movie.age_restriction}+" if movie else "—"
+                    status = "Оплачен" if ticket.is_paid else "Не оплачен"
+
+                    lines.append(f"Билет #{ticket.id}")
+                    lines.append(f"  Статус: {status}")
+                    lines.append(f"  Дата/время: {dt}")
+                    lines.append(f"  Зал: {hall_name}")
+                    lines.append(f"  Фильм: {title}")
+                    lines.append(f"  Возраст+: {age}")
+                    lines.append(f"  Цена: {ticket.price} ₽")
+                    lines.append("")
+
+            elif key == "sessions_schedule":
+                sessions = sorted(data["sessions"], key=lambda s: s.datetime)
+                movies_map = data["movies"]
+                halls_map = data["halls"]
+
+                lines = ["StarMIN Cinema — Расписание сеансов", "=" * 60, ""]
+                for s in sessions:
+                    movie = movies_map.get(s.movie_id)
+                    hall = halls_map.get(s.hall_id)
+                    dt = s.datetime.strftime("%d.%m.%Y %H:%M")
+                    title = movie.title if movie else "—"
+                    age = f"{movie.age_restriction}+" if movie else "—"
+                    hall_name = hall.name if hall else "—"
+
+                    lines.append(f"Сеанс #{s.id}")
+                    lines.append(f"  Дата/время: {dt}")
+                    lines.append(f"  Фильм: {title}")
+                    lines.append(f"  Возраст+: {age}")
+                    lines.append(f"  Зал: {hall_name}")
+                    lines.append(f"  Цена: {s.price} ₽")
+                    lines.append("")
+
+            elif key == "movies_catalog":
+                movies = data["movies_list"]
+                lines = ["StarMIN Cinema — Каталог фильмов", "=" * 60, ""]
+                for m in movies:
+                    lines.append(f"Фильм #{m.id}")
+                    lines.append(f"  Название: {m.title}")
+                    lines.append(f"  Жанр: {m.genre}")
+                    lines.append(f"  Длительность: {m.duration} мин")
+                    lines.append(f"  Возраст+: {m.age_restriction}+")
+                    lines.append("")
+
+            elif key == "revenue_by_hall":
+                tickets = data["tickets"]
+                sessions_map = data["sessions"]
+                halls_map = data["halls"]
+
+                hall_stats: dict[int, dict] = defaultdict(lambda: {"count": 0, "revenue": 0.0})
+                for t in tickets:
+                    session = sessions_map.get(t.session_id)
+                    if session:
+                        hall_stats[session.hall_id]["count"] += 1
+                        hall_stats[session.hall_id]["revenue"] += t.price
+
+                lines = ["StarMIN Cinema — Выручка по залам", "=" * 60, ""]
+                for hid, stats in sorted(hall_stats.items()):
+                    hall_name = halls_map.get(hid, f"Зал {hid}")
+                    lines.append(f"Зал: {hall_name}")
+                    lines.append(f"  Оплаченных билетов: {stats['count']}")
+                    lines.append(f"  Сумма выручки: {stats['revenue']:.2f} ₽")
+                    lines.append("")
+
+            else:
+                self._show_snackbar("Неизвестный тип отчёта")
+                return
+
+            save_path = os.path.join(self._save_dir(), f"starmin_{key}.txt")
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+
+            self._show_snackbar(f"Экспортировано: {save_path}")
+
         except ApiError as ex:
             self._show_snackbar(f"Ошибка API: {ex.detail}")
         except Exception as ex:

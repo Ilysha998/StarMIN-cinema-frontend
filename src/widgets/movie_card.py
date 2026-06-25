@@ -43,9 +43,10 @@ class _TimeChip(ft.Container):
 
 
 class BillboardTile(ft.Container):
-    def __init__(self, movie: Movie, sessions: list[Session], on_session_click: Callable[[int], None], halls_map: Optional[Dict[int, str]] = None, width: int = 200):
+    def __init__(self, movie: Movie, sessions: list[Session], on_session_click: Callable[[int], None], on_movie_click: Callable[[int], None], halls_map: Optional[Dict[int, str]] = None, width: int = 200):
         self.movie = movie
         self._on_session_click = on_session_click
+        self._on_movie_click = on_movie_click
 
         today_sessions = [s for s in sessions if s.datetime.date() == datetime.now().date()]
         today_sessions.sort(key=lambda s: s.datetime)
@@ -102,6 +103,8 @@ class BillboardTile(ft.Container):
             width=width,
             border_radius=12,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            ink=True,
+            on_click=lambda _: self._on_movie_click(self.movie.id),
             content=ft.Column(
                 spacing=0,
                 controls=[poster, info],

@@ -11,6 +11,7 @@ class Ticket(BaseModel):
     seat_type: str
     price: float
     is_paid: bool
+    refunded: bool = False
     qr_token: str
     phone: Optional[str] = None
     email: Optional[str] = None
