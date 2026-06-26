@@ -48,14 +48,14 @@ jobs:
         shell: pwsh
         run: |
           # Собираем бинарник
-          uv run --with "flet[desktop]" --with pandas --with openpyxl --with pillow --with requests --with "pyinstaller==6.3.0" pyinstaller --noconsole --onefile --collect-all flet --collect-all flet_desktop --name "starmin-cinema-windows-app" src/main.py
+          uv run --with "flet[desktop]" --with pydantic --with pydantic-settings --with httpx --with openpyxl --with pillow --with qrcode --with fpdf2 --with "pyinstaller==6.3.0" pyinstaller --noconsole --onefile --collect-all flet --collect-all flet_desktop --name "starmin-cinema-windows-app" src/main.py
           # Шаг архивации Compress-Archive полностью удален
 
       - name: Сборка Android (Flet CLI)
         if: matrix.name == 'apk'
         shell: bash
         run: |
-          uv run --with flet --with requests flet build apk src -o build/apk --yes --verbose
+          uv run --with flet --with pydantic --with pydantic-settings --with httpx --with qrcode --with pillow --with fpdf2 --with openpyxl flet build apk src -o build/apk --yes --verbose
 
       - name: Переименование APK
         if: matrix.name == 'apk'
