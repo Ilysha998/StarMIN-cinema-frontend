@@ -1,6 +1,7 @@
 import flet as ft
 import io
 import os
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from api.client import ApiClient, ApiError
@@ -21,9 +22,9 @@ REPORTS = [
 ]
 
 PERIODS = [
-    ("week", "Неделя"),
-    ("month", "Месяц"),
-    ("all", "Все время"),
+    ("week", "Неделя", "7d"),
+    ("month", "Месяц", "30d"),
+    ("all", "Все время", "all"),
 ]
 
 
@@ -42,7 +43,7 @@ class AdminStatsView(ft.Column):
 
         def _make_period_items(report_key: str, fmt: str):
             items = []
-            for period_key, period_label in PERIODS:
+            for period_key, period_label, _ in PERIODS:
                 items.append(ft.MenuItemButton(
                     content=ft.Text(period_label),
                     on_click=lambda _, rk=report_key, pk=period_key, f=fmt: self._do_export(rk, pk, f),
@@ -58,17 +59,16 @@ class AdminStatsView(ft.Column):
                 ))
             return items
 
+        self._menu_excel = ft.SubmenuButton(
+            content=ft.Text("Excel"),
+            controls=_make_report_submenu("excel"),
+        )
+        self._menu_txt = ft.SubmenuButton(
+            content=ft.Text("TXT"),
+            controls=_make_report_submenu("txt"),
+        )
         self._menu_bar = ft.MenuBar(
-            controls=[
-                ft.SubmenuButton(
-                    content=ft.Text("Экспорт Excel"),
-                    controls=_make_report_submenu("excel"),
-                ),
-                ft.SubmenuButton(
-                    content=ft.Text("Экспорт TXT"),
-                    controls=_make_report_submenu("txt"),
-                ),
-            ],
+            controls=[self._menu_excel, self._menu_txt],
         )
 
         super().__init__(
@@ -77,20 +77,29 @@ class AdminStatsView(ft.Column):
             controls=[
                 ft.Container(
                     padding=ft.padding.Padding(16, 16, 16, 0),
-                    content=ft.Row(
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        controls=[
-                            ft.Text("Статистика продаж", size=24, weight=ft.FontWeight.BOLD),
-                            ft.Row(spacing=8, controls=[
-                                self._menu_bar,
-                                ft.Button(
-                                    "Обновить",
-                                    icon=ft.Icons.REFRESH,
-                                    on_click=lambda _: self._load_stats(),
+                    content=ft.Column(spacing=8, controls=[
+                        ft.Text("Статистика продаж", size=24, weight=ft.FontWeight.BOLD),
+                        ft.ResponsiveRow(
+                            spacing=8,
+                            controls=[
+                                ft.Container(
+                                    col={"xs": 12, "sm": 8},
+                                    content=ft.Row(
+                                        spacing=4,
+                                        wrap=True,
+                                        controls=[
+                                            self._menu_bar,
+                                            ft.Button(
+                                                "Обновить",
+                                                icon=ft.Icons.REFRESH,
+                                                on_click=lambda _: self._load_stats(),
+                                            ),
+                                        ],
+                                    ),
                                 ),
-                            ]),
-                        ],
-                    ),
+                            ],
+                        ),
+                    ]),
                 ),
                 self._progress,
                 ft.Container(
@@ -169,6 +178,18 @@ class AdminStatsView(ft.Column):
         elif period == "month":
             return datetime.now() - timedelta(days=30)
         return None
+
+    def _period_slug(self, period: str) -> str:
+        for pk, pl, slug in PERIODS:
+            if pk == period:
+                return slug
+        return "all"
+
+    def _period_label(self, period: str) -> str:
+        for pk, pl, _ in PERIODS:
+            if pk == period:
+                return pl
+        return "Все время"
 
     def _load_sessions_map(self, period: str = "all"):
         cutoff = self._period_cutoff(period)
@@ -257,14 +278,15 @@ class AdminStatsView(ft.Column):
         else:
             self._export_txt(report_key, period)
 
-    def _period_label(self, period: str):
-        for pk, pl in PERIODS:
-            if pk == period:
-                return pl
-        return "Все время"
-
     def _save_dir(self):
-        d = os.path.join(os.path.expanduser("~"), "Documents")
+        if sys.platform == "android":
+            try:
+                import tempfile
+                d = os.path.join(tempfile.gettempdir(), "starmin_exports")
+            except Exception:
+                d = os.path.join(os.path.expanduser("~"), "starmin_exports")
+        else:
+            d = os.path.join(os.path.expanduser("~"), "Documents")
         os.makedirs(d, exist_ok=True)
         return d
 
@@ -328,10 +350,9 @@ class AdminStatsView(ft.Column):
                 for row_idx, ticket in enumerate(tickets, 2):
                     session = sessions_map.get(ticket.session_id)
                     movie = movies_map.get(session.movie_id) if session else None
-                    hall = halls_map.get(session.hall_id) if session else None
+                    hall_name = halls_map.get(session.hall_id, "—") if session else "—"
 
                     dt = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
-                    hall_name = hall.name if hall else "—"
                     movie_title = movie.title if movie else "—"
                     age_r = f"{movie.age_restriction}+" if movie else "—"
                     status = "Оплачен" if ticket.is_paid else "Не оплачен"
@@ -358,12 +379,11 @@ class AdminStatsView(ft.Column):
 
                 for row_idx, s in enumerate(sessions, 2):
                     movie = movies_map.get(s.movie_id)
-                    hall = halls_map.get(s.hall_id)
+                    hall_name = halls_map.get(s.hall_id, "—")
 
                     dt_str = s.datetime.strftime("%d.%m.%Y %H:%M")
                     movie_title = movie.title if movie else "—"
                     age_r = f"{movie.age_restriction}+" if movie else "—"
-                    hall_name = hall.name if hall else "—"
 
                     style_cell(ws, row_idx, 1, s.id)
                     style_cell(ws, row_idx, 2, dt_str)
@@ -415,8 +435,8 @@ class AdminStatsView(ft.Column):
                 for col_letter, w in zip("ABC", [20, 22, 18]):
                     ws.column_dimensions[col_letter].width = w
 
-            period_label = self._period_label(period).lower()
-            save_path = os.path.join(self._save_dir(), f"starmin_{key}_{period_label}.xlsx")
+            slug = self._period_slug(period)
+            save_path = os.path.join(self._save_dir(), f"starmin_{key}_{slug}.xlsx")
             buf = io.BytesIO()
             wb.save(buf)
             wb.close()
@@ -459,10 +479,9 @@ class AdminStatsView(ft.Column):
                 for ticket in tickets:
                     session = sessions_map.get(ticket.session_id)
                     movie = movies_map.get(session.movie_id) if session else None
-                    hall = halls_map.get(session.hall_id) if session else None
+                    hall_name = halls_map.get(session.hall_id, "—") if session else "—"
 
                     dt = session.datetime.strftime("%d.%m.%Y %H:%M") if session else "—"
-                    hall_name = hall.name if hall else "—"
                     title = movie.title if movie else "—"
                     age = f"{movie.age_restriction}+" if movie else "—"
                     status = "Оплачен" if ticket.is_paid else "Не оплачен"
@@ -484,11 +503,10 @@ class AdminStatsView(ft.Column):
                 lines = [f"StarMIN Cinema — Расписание сеансов ({period_label})", "=" * 60, ""]
                 for s in sessions:
                     movie = movies_map.get(s.movie_id)
-                    hall = halls_map.get(s.hall_id)
+                    hall_name = halls_map.get(s.hall_id, "—")
                     dt = s.datetime.strftime("%d.%m.%Y %H:%M")
                     title = movie.title if movie else "—"
                     age = f"{movie.age_restriction}+" if movie else "—"
-                    hall_name = hall.name if hall else "—"
 
                     lines.append(f"Сеанс #{s.id}")
                     lines.append(f"  Дата/время: {dt}")
@@ -533,8 +551,8 @@ class AdminStatsView(ft.Column):
                 self._show_snackbar("Неизвестный тип отчёта")
                 return
 
-            period_slug = self._period_label(period).lower()
-            save_path = os.path.join(self._save_dir(), f"starmin_{key}_{period_slug}.txt")
+            slug = self._period_slug(period)
+            save_path = os.path.join(self._save_dir(), f"starmin_{key}_{slug}.txt")
             with open(save_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
 

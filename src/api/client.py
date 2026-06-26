@@ -10,7 +10,7 @@ class ApiError(Exception):
 
 
 class ApiClient:
-    def __init__(self, base_url: str = "http://localhost:8000", timeout: float = 10.0):
+    def __init__(self, base_url: str = "http://starmincinema.ru:8000", timeout: float = 10.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._token: Optional[str] = None
