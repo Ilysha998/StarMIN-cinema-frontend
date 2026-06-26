@@ -24,12 +24,10 @@ jobs:
         include:
           - name: windows
             runner: windows-latest
-            build_cmd: "flet build windows src -o build/windows"
-            artifact_path: build/starmin-cinema-windows-app.zip
+            artifact_path: dist/starmin-cinema-windows-app.exe
 
           - name: apk
             runner: ubuntu-latest
-            build_cmd: "flet build apk src -o build/apk"
             artifact_path: build/starmin-cinema-android-app.apk
 
     steps:
@@ -45,20 +43,26 @@ jobs:
       - name: Настройка uv
         uses: astral-sh/setup-uv@v6
 
-      - name: Запуск сборки приложения
-        shell: bash
-        run: |
-          uv run --with flet --with requests ${{ matrix.build_cmd }} --yes --verbose
-      - name: Упаковка Windows в ZIP
+      - name: Сборка Windows (PyInstaller)
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path build/windows -DestinationPath build/starmin-cinema-windows-app.zip
+          # Собираем бинарник
+          uv run --with "flet[desktop]" --with pandas --with openpyxl --with pillow --with requests --with "pyinstaller==6.3.0" pyinstaller --noconsole --onefile --collect-all flet --collect-all flet_desktop --name "starmin-cinema-windows-app" src/main.py
+          # Шаг архивации Compress-Archive полностью удален
+
+      - name: Сборка Android (Flet CLI)
+        if: matrix.name == 'apk'
+        shell: bash
+        run: |
+          uv run --with flet --with requests flet build apk src -o build/apk --yes --verbose
+
       - name: Переименование APK
         if: matrix.name == 'apk'
         shell: bash
         run: |
           mv build/apk/*.apk build/starmin-cinema-android-app.apk
+
       - name: Сохранение артефакта
         uses: actions/upload-artifact@v4
         with:
@@ -81,7 +85,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            starmin-cinema-windows-app.zip
+            starmin-cinema-windows-app.exe
             starmin-cinema-android-app.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
