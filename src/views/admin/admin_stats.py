@@ -279,16 +279,8 @@ class AdminStatsView(ft.Column):
             self._export_txt(report_key, period)
 
     def _save_dir(self):
-        if sys.platform == "android":
-            try:
-                import tempfile
-                d = os.path.join(tempfile.gettempdir(), "starmin_exports")
-            except Exception:
-                d = os.path.join(os.path.expanduser("~"), "starmin_exports")
-        else:
-            d = os.path.join(os.path.expanduser("~"), "Documents")
-        os.makedirs(d, exist_ok=True)
-        return d
+        from utils.file_utils import get_save_dir
+        return get_save_dir("starmin")
 
     def _export_excel(self, report_key: str, period: str):
         self._progress.visible = True
