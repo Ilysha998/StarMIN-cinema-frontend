@@ -4,6 +4,7 @@ import tempfile
 
 ANDROID_PATHS = [
     "/data/media/0/Download",
+    "/storage/emulated/0/Download",
 ]
 
 
@@ -32,7 +33,8 @@ def get_save_dir(subdir: str = "starmin") -> str:
 
 def _try_dir(d: str) -> bool:
     try:
-        os.makedirs(d, exist_ok=True)
+        if not os.path.exists(d):
+            os.makedirs(d, exist_ok=True)
         test = os.path.join(d, ".w")
         with open(test, "w") as f:
             f.write("1")
