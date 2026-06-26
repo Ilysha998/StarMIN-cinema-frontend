@@ -6,11 +6,12 @@ from typing import Callable
 
 
 class LoginView(ft.Column):
-    def __init__(self, api_client: ApiClient, app_state: AppState, on_login: Callable, on_skip: Callable | None = None):
+    def __init__(self, api_client: ApiClient, app_state: AppState, on_login: Callable, on_skip: Callable | None = None, on_url_change: Callable | None = None):
         self._api_client = api_client
         self._app_state = app_state
         self._on_login = on_login
         self._on_skip = on_skip
+        self._on_url_change = on_url_change
         self._auth_api = AuthApi(api_client)
 
         self._login_field = ft.TextField(
@@ -32,6 +33,13 @@ class LoginView(ft.Column):
         self._status_text = ft.Text("", color=ft.Colors.ERROR, size=13)
         self._loading = ft.ProgressBar(visible=False, bar_height=2)
 
+        self._url_field = ft.TextField(
+            label="URL сервера",
+            value=self._api_client.base_url,
+            on_submit=self._change_url,
+            prefix_icon=ft.Icons.SETTINGS,
+        )
+
         self._login_form = ft.Column(spacing=12, controls=[
             ft.Text("Вход", size=24, weight=ft.FontWeight.BOLD),
             self._login_field,
@@ -40,6 +48,14 @@ class LoginView(ft.Column):
             ft.Button("Войти", icon=ft.Icons.LOGIN, on_click=self._do_login,
                       style=ft.ButtonStyle(bgcolor=ft.Colors.PRIMARY, color=ft.Colors.ON_PRIMARY)),
             ft.TextButton("Нет аккаунта? Зарегистрироваться", on_click=lambda _: self._show_register()),
+            ft.Divider(),
+            ft.Text("Настройки", size=16, weight=ft.FontWeight.W_500),
+            self._url_field,
+            ft.Button(
+                "Применить URL",
+                icon=ft.Icons.SAVE,
+                on_click=lambda _: self._change_url(None),
+            ),
             ft.Divider(),
             ft.TextButton("Продолжить без входа", icon=ft.Icons.VISIBILITY_OFF, on_click=lambda _: self._do_skip()),
         ])
@@ -92,6 +108,21 @@ class LoginView(ft.Column):
     def _do_skip(self):
         if self._on_skip:
             self._on_skip()
+
+    def _change_url(self, e):
+        url = self._url_field.value.strip()
+        if url:
+            self._api_client.set_base_url(url)
+            if self._on_url_change:
+                self.page.run_task(self._on_url_change, url)
+            self._show_snackbar(f"URL изменён на {url}")
+
+    def _show_snackbar(self, msg: str):
+        if self.page:
+            sb = ft.SnackBar(ft.Text(msg))
+            self.page.overlay.append(sb)
+            sb.open = True
+            self.page.update()
 
     def _show_loading(self, show: bool):
         self._loading.visible = show

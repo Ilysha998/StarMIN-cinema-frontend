@@ -2,12 +2,12 @@ import flet as ft
 from api.client import ApiClient, ApiError
 from api.sessions import SessionsApi
 from api.movies import MoviesApi
-from models.session import Session, SessionCreate, SessionUpdate, HallEnum
+from api.halls import HallsApi
+from models.session import Session, SessionCreate, SessionUpdate
 from models.movie import Movie
+from models.hall import Hall
 from state.app_state import AppState
-
-
-HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
+from typing import Dict
 
 
 class AdminSessionsView(ft.Column):
@@ -16,8 +16,11 @@ class AdminSessionsView(ft.Column):
         self._app_state = app_state
         self._sessions_api = SessionsApi(api_client)
         self._movies_api = MoviesApi(api_client)
+        self._halls_api = HallsApi(api_client)
         self._sessions: list[Session] = []
         self._movies: list[Movie] = []
+        self._halls: list[Hall] = []
+        self._halls_map: Dict[int, str] = {}
         self._dialog = ft.AlertDialog()
 
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
@@ -54,7 +57,11 @@ class AdminSessionsView(ft.Column):
                 self._progress,
                 ft.Container(
                     padding=16,
-                    content=ft.Column([self._table], scroll=ft.ScrollMode.AUTO),
+                    content=ft.Row(
+                        controls=[self._table],
+                        scroll=ft.ScrollMode.ALWAYS,
+                        expand=True,
+                    ),
                 ),
             ],
             expand=True,
@@ -70,6 +77,8 @@ class AdminSessionsView(ft.Column):
         try:
             self._movies = self._movies_api.get_all(skip=0, limit=100)
             self._sessions = self._sessions_api.get_all(skip=0, limit=100)
+            self._halls = self._halls_api.get_all()
+            self._halls_map = {h.id: h.name for h in self._halls}
             self._render()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
@@ -86,7 +95,7 @@ class AdminSessionsView(ft.Column):
             m = movies_map.get(s.movie_id)
             movie_title = m.title if m else f"#{s.movie_id}"
             dt_str = s.datetime.strftime("%d.%m.%Y %H:%M")
-            hall_name = HALL_NAMES.get(s.hall, s.hall)
+            hall_name = self._halls_map.get(s.hall_id, f"Зал {s.hall_id}")
 
             self._table.rows.append(
                 ft.DataRow(
@@ -117,11 +126,7 @@ class AdminSessionsView(ft.Column):
         time_f = ft.TextField(label="Время (HH:MM)")
         hall_dd = ft.Dropdown(
             label="Зал",
-            options=[
-                ft.dropdown.Option(key="1", text="Зал 1"),
-                ft.dropdown.Option(key="2", text="Зал 2"),
-                ft.dropdown.Option(key="vip", text="VIP"),
-            ],
+            options=[ft.dropdown.Option(key=str(h.id), text=h.name) for h in self._halls],
         )
         price_f = ft.TextField(label="Цена", keyboard_type=ft.KeyboardType.NUMBER)
 
@@ -132,7 +137,7 @@ class AdminSessionsView(ft.Column):
                 sc = SessionCreate(
                     movie_id=int(movie_dd.value),
                     datetime=dt,
-                    hall=HallEnum(hall_dd.value),
+                    hall_id=int(hall_dd.value),
                     price=float(price_f.value),
                 )
                 self._sessions_api.create(sc)

@@ -25,7 +25,8 @@ def generate_ticket_pdf(
     date_str: str,
     time_str: str,
     hall: str,
-    seat: int,
+    seat_row: int,
+    seat_col: int,
     price: float,
     qr_token: str,
     is_paid: bool = True,
@@ -72,7 +73,7 @@ def generate_ticket_pdf(
         ("Дата", date_str),
         ("Время", time_str),
         ("Зал", hall),
-        ("Место", str(seat)),
+        ("Место", f"Ряд {seat_row}, Место {seat_col}"),
         ("Цена", f"{int(price)} RUB"),
         ("Статус", "ОПЛАЧЕНО" if is_paid else "НЕ ОПЛАЧЕНО"),
     ]

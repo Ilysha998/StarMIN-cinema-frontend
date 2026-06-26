@@ -4,25 +4,22 @@ version = "0.1.0"
 description = ""
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [
-    { name = "Flet developer", email = "you@example.com" }
-]
+authors = [{ name = "Flet developer", email = "you@example.com" }]
 dependencies = [
-    "flet>=0.85.2"
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "flet>=0.85.2",
+  "httpx>=0.27.0",
+  "qrcode",
+  "pillow",
+  "fpdf2",
+  "openpyxl",
 ]
-
 [dependency-groups]
-dev = [
-    "flet-cli>=0.85.2",
-    "flet-desktop>=0.85.2",
-    "flet-web>=0.85.2",
-]
+dev = ["flet-cli>=0.85.2", "flet-desktop>=0.85.2", "flet-web>=0.85.2"]
 
 [tool.flet]
 org = "com.mycompany"
 product = "starmin-cinema-frontend"
 company = "Flet"
 copyright = "Copyright (C) 2023-2026 by Flet"
-
-[tool.flet.app]
-path = "src"

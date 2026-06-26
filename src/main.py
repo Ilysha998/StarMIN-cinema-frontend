@@ -13,6 +13,7 @@ from views.profile_view import ProfileView
 from views.admin.admin_movies import AdminMoviesView
 from views.admin.admin_sessions import AdminSessionsView
 from views.admin.admin_users import AdminUsersView
+from api.halls import HallsApi
 from views.admin.admin_stats import AdminStatsView
 
 from widgets.adaptive_nav import build_adaptive_nav, NAV_BILLBOARD, NAV_FILMS, NAV_TICKETS, NAV_PROFILE, NAV_ADMIN
@@ -36,6 +37,8 @@ def main(page: ft.Page):
     _view_stack: list = []
     _browsing = False
     _layout_ready = False
+    _current_view = None
+    _halls_map: dict = {}
 
     def _setup_themes():
         page.theme = ft.Theme(
@@ -92,6 +95,11 @@ def main(page: ft.Page):
 
         _browsing = not app_state.is_logged_in
         _layout_ready = True
+        try:
+            halls = HallsApi(api_client).get_all()
+            _halls_map = {h.id: h.name for h in halls}
+        except Exception:
+            _halls_map = {}
         _build_nav()
         _navigate_to(NAV_BILLBOARD)
         page.update()
@@ -119,6 +127,7 @@ def main(page: ft.Page):
                         api_client, app_state,
                         on_login=_on_login_success,
                         on_skip=_on_skip_login,
+                        on_url_change=_on_url_change,
                     ),
                 )
             )
@@ -187,6 +196,7 @@ def main(page: ft.Page):
                     api_client, app_state,
                     on_login=_on_login_success,
                     on_skip=_on_skip_login,
+                    on_url_change=_on_url_change,
                 ),
             )
         )
@@ -194,7 +204,7 @@ def main(page: ft.Page):
         page.update()
 
     def _navigate_to(index: int):
-        nonlocal _current_nav_index
+        nonlocal _current_nav_index, _current_view
         if _browsing and index in (NAV_TICKETS, NAV_PROFILE, NAV_ADMIN):
             _current_nav_index = index
             _update_nav_selection()
@@ -205,7 +215,7 @@ def main(page: ft.Page):
         view = None
 
         if index == NAV_BILLBOARD:
-            view = BillboardView(api_client, app_state, on_session_click=_on_session_click)
+            view = BillboardView(api_client, app_state, on_session_click=_on_session_click, on_movie_click=_on_movie_click, halls_map=_halls_map)
         elif index == NAV_FILMS:
             view = FilmsView(api_client, app_state, on_movie_click=_on_movie_click)
         elif index == NAV_TICKETS:
@@ -217,19 +227,20 @@ def main(page: ft.Page):
 
         if view:
             _content_area.controls.append(view)
+            _current_view = view
         _update_nav_selection()
         page.update()
 
     def _build_admin_view():
         admin_tabs = ft.Tabs(
             content=ft.Column([
-                ft.Tab(label="Фильмы"),
+                ft.Tab(icon=ft.Icons.MOVIE_FILTER),
                 ft.Container(content=AdminMoviesView(api_client, app_state), expand=True, padding=8),
-                ft.Tab(label="Сеансы"),
+                ft.Tab(icon=ft.Icons.CALENDAR_MONTH),
                 ft.Container(content=AdminSessionsView(api_client, app_state), expand=True, padding=8),
-                ft.Tab(label="Пользователи"),
+                ft.Tab(icon=ft.Icons.PEOPLE),
                 ft.Container(content=AdminUsersView(api_client, app_state), expand=True, padding=8),
-                ft.Tab(label="Статистика"),
+                ft.Tab(icon=ft.Icons.BAR_CHART),
                 ft.Container(content=AdminStatsView(api_client, app_state), expand=True, padding=8),
             ]),
             length=4,
@@ -238,10 +249,11 @@ def main(page: ft.Page):
         return ft.Column([admin_tabs], expand=True)
 
     def _push_view(view):
-        nonlocal _current_nav_index
+        nonlocal _current_nav_index, _current_view
         _view_stack.append(_current_nav_index)
         _content_area.controls.clear()
         _content_area.controls.append(view)
+        _current_view = view
         page.update()
 
     def _pop_view():
@@ -254,6 +266,7 @@ def main(page: ft.Page):
     def _on_session_click(session_id: int):
         _push_view(SessionDetailView(
             api_client, app_state, session_id,
+            halls_map=_halls_map,
             on_back=_pop_view,
             on_ticket_bought=lambda: None,
         ))
@@ -263,6 +276,7 @@ def main(page: ft.Page):
             api_client, app_state, movie_id,
             on_session_click=_on_session_click,
             on_back=_pop_view,
+            halls_map=_halls_map,
         ))
 
     def _update_nav_selection():
@@ -274,6 +288,8 @@ def main(page: ft.Page):
     def _on_resize(e):
         if _layout_ready:
             _build_nav()
+            if _current_view and hasattr(_current_view, 'on_page_resize'):
+                _current_view.on_page_resize()
 
     page.on_resize = _on_resize
     page.run_task(_restore_session)

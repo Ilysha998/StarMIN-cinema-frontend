@@ -4,6 +4,10 @@ from api.tickets import TicketsApi
 from state.app_state import AppState
 from widgets.ticket_card import TicketCard
 from typing import Optional
+import os
+import tempfile
+import json
+import sys
 
 
 class TicketsView(ft.Column):
@@ -66,7 +70,7 @@ class TicketsView(ft.Column):
         else:
             self._empty_text.visible = False
             for t in tickets:
-                card = TicketCard(t, on_pay=self._pay_ticket, on_cancel=self._cancel_ticket)
+                card = TicketCard(t, on_pay=self._pay_ticket, on_cancel=self._cancel_ticket, on_download=self._download_ticket, on_refund=self._refund_ticket)
                 self._tickets_column.controls.append(card)
         self.update()
 
@@ -79,6 +83,14 @@ class TicketsView(ft.Column):
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
 
+    def _refund_ticket(self, ticket_id: int):
+        try:
+            self._tickets_api.refund(ticket_id)
+            self._show_snackbar("Деньги возвращены")
+            self._load_tickets()
+        except ApiError as ex:
+            self._show_snackbar(f"Ошибка: {ex.detail}")
+
     def _cancel_ticket(self, ticket_id: int):
         try:
             self._tickets_api.cancel(ticket_id)
@@ -86,6 +98,52 @@ class TicketsView(ft.Column):
             self._load_tickets()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
+
+    def _download_ticket(self, ticket_id: int):
+        self.page.run_task(self._download_ticket_async, ticket_id)
+
+    async def _download_ticket_async(self, ticket_id: int):
+        try:
+            ticket = self._tickets_api.get_by_id(ticket_id)
+
+            from utils.ticket_utils import generate_ticket_pdf
+
+            pdf_bytes = generate_ticket_pdf(
+                movie_title=ticket.get("movie_title", "—"),
+                date_str=ticket.get("session_datetime", "").split("T")[0] if ticket.get("session_datetime") else "—",
+                time_str=ticket.get("session_datetime", "").split("T")[1][:5] if ticket.get("session_datetime") else "—",
+                hall=ticket.get("hall_name", "—"),
+                seat_row=ticket.get("seat_row", 0) + 1,
+                seat_col=ticket.get("seat_col", 0) + 1,
+                price=ticket.get("price", 0),
+                qr_token=ticket.get("qr_token", ""),
+                is_paid=ticket.get("is_paid", False),
+                phone=ticket.get("phone"),
+                email=ticket.get("email"),
+            )
+
+            save_path = await self._save_pdf_to_device(pdf_bytes, f"ticket_{ticket_id}.pdf")
+            if save_path:
+                self._show_snackbar(f"Сохранено: {save_path}")
+                try:
+                    await self.page.launch_url_async(save_path)
+                except Exception:
+                    pass
+
+        except Exception as ex:
+            self._show_snackbar(f"Ошибка: {ex}")
+
+    async def _save_pdf_to_device(self, pdf_bytes: bytes, filename: str) -> str | None:
+        try:
+            from utils.file_utils import get_save_dir
+            save_dir = get_save_dir("starmin_cinema")
+            save_path = os.path.join(save_dir, filename)
+            with open(save_path, "wb") as f:
+                f.write(pdf_bytes)
+            return save_path
+        except Exception as ex:
+            self._show_snackbar(f"Ошибка сохранения: {ex}")
+            return None
 
     def _show_snackbar(self, msg: str):
         if self.page:

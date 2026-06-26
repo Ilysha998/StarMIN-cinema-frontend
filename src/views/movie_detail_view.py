@@ -6,7 +6,7 @@ from models.movie import Movie
 from models.session import Session
 from state.app_state import AppState
 from widgets.session_card import SessionCard
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict
 from datetime import datetime, timedelta
 
 
@@ -14,16 +14,16 @@ AGE_COLORS = {
     0: ft.Colors.GREEN, 6: ft.Colors.BLUE, 12: ft.Colors.ORANGE,
     16: ft.Colors.DEEP_ORANGE, 18: ft.Colors.RED,
 }
-HALL_NAMES = {"1": "Зал 1", "2": "Зал 2", "vip": "VIP"}
 
 
 class MovieDetailView(ft.Column):
-    def __init__(self, api_client: ApiClient, app_state: AppState, movie_id: int, on_session_click: Callable[[int], None], on_back: Callable):
+    def __init__(self, api_client: ApiClient, app_state: AppState, movie_id: int, on_session_click: Callable[[int], None], on_back: Callable, halls_map: Optional[Dict[int, str]] = None):
         self._api_client = api_client
         self._app_state = app_state
         self._movie_id = movie_id
         self._on_session_click = on_session_click
         self._on_back = on_back
+        self._halls_map = halls_map or {}
         self._movies_api = MoviesApi(api_client)
         self._sessions_api = SessionsApi(api_client)
         self._movie: Optional[Movie] = None
@@ -131,32 +131,49 @@ class MovieDetailView(ft.Column):
             controls=[
                 ft.Container(
                     height=160,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER,
                     border_radius=12,
                     alignment=ft.alignment.Alignment(0, 0),
-                    content=ft.Icon(ft.Icons.MOVIE_OUTLINED, size=64, color=ft.Colors.ON_SURFACE_VARIANT),
+                    content=ft.Stack(
+                        controls=[
+                            ft.Container(
+                                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                                border_radius=12,
+                                expand=True,
+                            ),
+                            ft.Image(
+                                src=m.banner_url or m.poster_url,
+                                fit=ft.controls.box.BoxFit.COVER,
+                                border_radius=12,
+                                expand=True,
+                            ),
+                        ],
+                    ),
                 ),
                 ft.Text(m.title, size=24, weight=ft.FontWeight.BOLD),
-                ft.Row(
-                    spacing=12,
+                ft.Column(
+                    spacing=4,
                     controls=[
-                        ft.Container(
-                            padding=ft.padding.Padding(4, 8, 4, 8),
-                            border_radius=6,
-                            bgcolor=age_c,
-                            content=ft.Text(f"{m.age_restriction}+", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                        ft.Row(
+                            spacing=12,
+                            controls=[
+                                ft.Container(
+                                    padding=ft.padding.Padding(4, 8, 4, 8),
+                                    border_radius=6,
+                                    bgcolor=age_c,
+                                    content=ft.Text(f"{m.age_restriction}+", size=13, weight=ft.FontWeight.BOLD, color=ft.Colors.ON_PRIMARY),
+                                ),
+                                ft.Row(spacing=4, controls=[
+                                    ft.Icon(ft.Icons.CATEGORY, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
+                                    ft.Text(m.genre, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ]),
+                                ft.Row(spacing=4, controls=[
+                                    ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
+                                    ft.Text(f"{m.duration} мин", size=14, color=ft.Colors.ON_SURFACE_VARIANT),
+                                ]),
+                            ],
                         ),
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.CATEGORY, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(m.genre, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                        ]),
-                        ft.Row(spacing=4, controls=[
-                            ft.Icon(ft.Icons.TIMER_OUTLINED, size=16, color=ft.Colors.ON_SURFACE_VARIANT),
-                            ft.Text(f"{m.duration} мин", size=14, color=ft.Colors.ON_SURFACE_VARIANT),
-                        ]),
                         today_status,
                     ],
-                    wrap=True,
                 ),
             ],
         )
@@ -174,7 +191,7 @@ class MovieDetailView(ft.Column):
             active_today.sort(key=lambda s: s.datetime)
             for s in active_today:
                 self._today_column.controls.append(
-                    SessionCard(s, movie_title=m.title, on_click=self._on_session_click)
+                    SessionCard(s, movie_title=m.title, halls_map=self._halls_map, on_click=self._on_session_click)
                 )
 
         if ended_today:
@@ -185,7 +202,7 @@ class MovieDetailView(ft.Column):
             )
             ended_today.sort(key=lambda s: s.datetime)
             for s in ended_today:
-                card = SessionCard(s, movie_title=m.title, on_click=None)
+                card = SessionCard(s, movie_title=m.title, halls_map=self._halls_map, on_click=None)
                 card.opacity = 0.5
                 self._today_column.controls.append(card)
 
@@ -201,7 +218,7 @@ class MovieDetailView(ft.Column):
                 )
                 for s in sorted(sessions_by_date[d], key=lambda x: x.datetime):
                     self._other_column.controls.append(
-                        SessionCard(s, movie_title=m.title, on_click=self._on_session_click)
+                        SessionCard(s, movie_title=m.title, halls_map=self._halls_map, on_click=self._on_session_click)
                     )
 
     def _show_snackbar(self, msg: str):

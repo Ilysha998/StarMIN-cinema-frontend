@@ -14,6 +14,14 @@ AGE_COLORS = {
     16: ft.Colors.DEEP_ORANGE, 18: ft.Colors.RED,
 }
 
+AGE_OPTIONS = [
+    ft.dropdown.Option(key="0", text="0+"),
+    ft.dropdown.Option(key="6", text="6+"),
+    ft.dropdown.Option(key="12", text="12+"),
+    ft.dropdown.Option(key="16", text="16+"),
+    ft.dropdown.Option(key="18", text="18+"),
+]
+
 
 class FilmCard(ft.Container):
     def __init__(self, movie: Movie, has_sessions_today: bool, on_click: Callable[[int], None]):
@@ -41,7 +49,7 @@ class FilmCard(ft.Container):
                 controls=[
                     ft.Column(spacing=4, expand=True, controls=[
                         ft.Text(movie.title, size=16, weight=ft.FontWeight.BOLD, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                        ft.Row(spacing=12, controls=[
+                        ft.Row(spacing=12, wrap=True, controls=[
                             ft.Row(spacing=4, controls=[
                                 ft.Icon(ft.Icons.CATEGORY, size=14, color=ft.Colors.ON_SURFACE_VARIANT),
                                 ft.Text(movie.genre, size=13, color=ft.Colors.ON_SURFACE_VARIANT),
@@ -84,6 +92,20 @@ class FilmsView(ft.Column):
             expand=True,
         )
 
+        self._genre_filter = ft.Dropdown(
+            label="Жанр",
+            options=[],
+            width=180,
+        )
+        self._genre_filter.on_change = self._on_filter_change
+
+        self._age_filter = ft.Dropdown(
+            label="Возраст",
+            options=AGE_OPTIONS,
+            width=120,
+        )
+        self._age_filter.on_change = self._on_filter_change
+
         self._cards_column = ft.Column(spacing=8)
         self._progress = ft.ProgressBar(visible=False, bar_height=2)
         self._empty_text = ft.Text("Фильмы не найдены", size=16, color=ft.Colors.ON_SURFACE_VARIANT, visible=False)
@@ -98,7 +120,13 @@ class FilmsView(ft.Column):
                 ),
                 ft.Container(
                     padding=ft.padding.Padding(16, 0, 16, 0),
-                    content=self._search_field,
+                    content=ft.Column(spacing=8, controls=[
+                        self._search_field,
+                        ft.Row(spacing=8, controls=[
+                            self._genre_filter,
+                            self._age_filter,
+                        ]),
+                    ]),
                 ),
                 self._progress,
                 ft.Container(
@@ -120,6 +148,9 @@ class FilmsView(ft.Column):
     def _on_search(self, e):
         self._render()
 
+    def _on_filter_change(self, e):
+        self._render()
+
     def _load_data(self):
         if self._loading:
             return
@@ -130,6 +161,7 @@ class FilmsView(ft.Column):
         try:
             self._movies = self._movies_api.get_all(skip=0, limit=100)
             self._sessions = self._sessions_api.get_all(skip=0, limit=100)
+            self._populate_genre_options()
             self._render()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
@@ -140,13 +172,30 @@ class FilmsView(ft.Column):
             self._progress.visible = False
             self.update()
 
+    def _populate_genre_options(self):
+        genres = sorted({m.genre for m in self._movies})
+        self._genre_filter.options = [ft.dropdown.Option(key=g, text=g) for g in genres]
+        if self._genre_filter.page:
+            self._genre_filter.update()
+
+    def _apply_filters(self, movies: list[Movie]) -> list[Movie]:
+        result = movies
+        query = (self._search_field.value or "").strip().lower()
+        if query:
+            result = [m for m in result if query in m.title.lower() or query in m.genre.lower()]
+        genre_val = self._genre_filter.value
+        if genre_val:
+            result = [m for m in result if m.genre == genre_val]
+        age_val = self._age_filter.value
+        if age_val is not None and age_val != "":
+            result = [m for m in result if m.age_restriction == int(age_val)]
+        return result
+
     def _render(self):
         self._cards_column.controls.clear()
-        query = self._search_field.value.strip().lower()
         now = datetime.now()
         today = now.date()
 
-        movies_map = {m.id: m for m in self._movies}
         movie_ids_today: set[int] = set()
         for s in self._sessions:
             if s.datetime.date() == today:
@@ -155,9 +204,8 @@ class FilmsView(ft.Column):
         movies_with = [m for m in self._movies if m.id in movie_ids_today]
         movies_without = [m for m in self._movies if m.id not in movie_ids_today]
 
-        if query:
-            movies_with = [m for m in movies_with if query in m.title.lower() or query in m.genre.lower()]
-            movies_without = [m for m in movies_without if query in m.title.lower() or query in m.genre.lower()]
+        movies_with = self._apply_filters(movies_with)
+        movies_without = self._apply_filters(movies_without)
 
         movies_with.sort(key=lambda m: m.age_restriction)
         movies_without.sort(key=lambda m: m.age_restriction)

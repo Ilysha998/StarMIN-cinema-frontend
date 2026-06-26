@@ -6,20 +6,27 @@ from models.movie import Movie
 from models.session import Session
 from state.app_state import AppState
 from widgets.movie_card import BillboardTile
-from typing import Callable
+from typing import Callable, Dict, Optional
 from datetime import datetime, timedelta
 
-
-TILE_W = 200
 TILE_GAP = 12
-TILE_PAD = 32
+
+AGE_OPTIONS = [
+    ft.dropdown.Option(key="0", text="0+"),
+    ft.dropdown.Option(key="6", text="6+"),
+    ft.dropdown.Option(key="12", text="12+"),
+    ft.dropdown.Option(key="16", text="16+"),
+    ft.dropdown.Option(key="18", text="18+"),
+]
 
 
 class BillboardView(ft.Column):
-    def __init__(self, api_client: ApiClient, app_state: AppState, on_session_click: Callable[[int], None]):
+    def __init__(self, api_client: ApiClient, app_state: AppState, on_session_click: Callable[[int], None], on_movie_click: Callable[[int], None], halls_map: Optional[Dict[int, str]] = None):
         self._api_client = api_client
         self._app_state = app_state
         self._on_session_click = on_session_click
+        self._on_movie_click = on_movie_click
+        self._halls_map = halls_map or {}
         self._movies_api = MoviesApi(api_client)
         self._sessions_api = SessionsApi(api_client)
         self._movies: list[Movie] = []
@@ -32,6 +39,20 @@ class BillboardView(ft.Column):
             on_change=self._on_search,
             expand=True,
         )
+
+        self._genre_filter = ft.Dropdown(
+            label="Жанр",
+            options=[],
+            width=180,
+        )
+        self._genre_filter.on_change = self._on_filter_change
+
+        self._age_filter = ft.Dropdown(
+            label="Возраст",
+            options=AGE_OPTIONS,
+            width=120,
+        )
+        self._age_filter.on_change = self._on_filter_change
 
         self._tiles_container = ft.Container(
             padding=ft.padding.Padding(16, 0, 16, 0),
@@ -49,7 +70,13 @@ class BillboardView(ft.Column):
                 ),
                 ft.Container(
                     padding=ft.padding.Padding(16, 0, 16, 0),
-                    content=self._search_field,
+                    content=ft.Column(spacing=8, controls=[
+                        self._search_field,
+                        ft.Row(spacing=8, controls=[
+                            self._genre_filter,
+                            self._age_filter,
+                        ]),
+                    ]),
                 ),
                 self._progress,
                 self._tiles_container,
@@ -68,6 +95,9 @@ class BillboardView(ft.Column):
     def _on_search(self, e):
         self._render()
 
+    def _on_filter_change(self, e):
+        self._render()
+
     def _load_data(self):
         if self._loading:
             return
@@ -78,6 +108,7 @@ class BillboardView(ft.Column):
         try:
             self._movies = self._movies_api.get_all(skip=0, limit=100)
             self._sessions = self._sessions_api.get_all(skip=0, limit=100)
+            self._populate_genre_options()
             self._render()
         except ApiError as ex:
             self._show_snackbar(f"Ошибка: {ex.detail}")
@@ -88,8 +119,26 @@ class BillboardView(ft.Column):
             self._progress.visible = False
             self.update()
 
+    def _populate_genre_options(self):
+        genres = sorted({m.genre for m in self._movies})
+        self._genre_filter.options = [ft.dropdown.Option(key=g, text=g) for g in genres]
+        if self._genre_filter.page:
+            self._genre_filter.update()
+
+    def _apply_filters(self, movies: list[Movie]) -> list[Movie]:
+        result = movies
+        query = (self._search_field.value or "").strip().lower()
+        if query:
+            result = [m for m in result if query in m.title.lower() or query in m.genre.lower()]
+        genre_val = self._genre_filter.value
+        if genre_val:
+            result = [m for m in result if m.genre == genre_val]
+        age_val = self._age_filter.value
+        if age_val is not None and age_val != "":
+            result = [m for m in result if m.age_restriction == int(age_val)]
+        return result
+
     def _render(self):
-        query = self._search_field.value.strip().lower()
         now = datetime.now()
         today = now.date()
 
@@ -107,35 +156,40 @@ class BillboardView(ft.Column):
                         movie_ids_active.add(s.movie_id)
 
         movies_active = [m for m in self._movies if m.id in movie_ids_active]
-        if query:
-            movies_active = [
-                m for m in movies_active
-                if query in m.title.lower() or query in m.genre.lower()
-            ]
+        movies_active = self._apply_filters(movies_active)
         movies_active.sort(key=lambda m: m.age_restriction)
+
+        self._empty_text.visible = not movies_active
+
+        pw = int(self.page.width) if self.page else 1100
+        nav_w = 0 if pw < 800 else 220
+        content_w = pw - nav_w - 32
+
+        if content_w < 500:
+            cols = 2
+        elif content_w < 800:
+            cols = 3
+        elif content_w < 1100:
+            cols = 4
+        else:
+            cols = 5
+
+        tile_w = max(140, (content_w - (cols - 1) * TILE_GAP) // cols)
 
         tiles = []
         for m in movies_active:
-            tiles.append(BillboardTile(m, sessions_by_movie.get(m.id, []), self._on_session_click))
+            tiles.append(BillboardTile(m, sessions_by_movie.get(m.id, []), self._on_session_click, self._on_movie_click, halls_map=self._halls_map, width=tile_w))
 
-        self._empty_text.visible = not tiles
-
-        pw = int(self.page.width) if self.page else 1100
-        avail = pw - TILE_PAD
-        cols = max(1, int(avail // (TILE_W + TILE_GAP)))
-
-        rows: list[ft.Row] = []
-        for i in range(0, len(tiles), cols):
-            row_tiles = tiles[i:i + cols]
-            row = ft.Row(
-                controls=row_tiles,
-                spacing=TILE_GAP,
-                alignment=ft.MainAxisAlignment.START if len(row_tiles) < cols else ft.MainAxisAlignment.START,
-            )
-            rows.append(row)
-
-        self._tiles_container.content = ft.Column(spacing=TILE_GAP, controls=rows)
+        self._tiles_container.content = ft.Row(
+            wrap=True,
+            spacing=TILE_GAP,
+            run_spacing=TILE_GAP,
+            controls=tiles,
+        )
         self.update()
+
+    def on_page_resize(self):
+        self._render()
 
     def _show_snackbar(self, msg: str):
         if self.page:

@@ -9,6 +9,7 @@ class Movie(BaseModel):
     duration: int
     age_restriction: int
     poster_url: Optional[str] = None
+    banner_url: Optional[str] = None
 
 
 class MovieCreate(BaseModel):
@@ -17,6 +18,7 @@ class MovieCreate(BaseModel):
     duration: int = Field(..., gt=0)
     age_restriction: int = Field(..., ge=0, le=18)
     poster_url: Optional[str] = Field(None, max_length=500)
+    banner_url: Optional[str] = Field(None, max_length=500)
 
 
 class MovieUpdate(BaseModel):
@@ -25,3 +27,4 @@ class MovieUpdate(BaseModel):
     duration: Optional[int] = Field(None, gt=0)
     age_restriction: Optional[int] = Field(None, ge=0, le=18)
     poster_url: Optional[str] = Field(None, max_length=500)
+    banner_url: Optional[str] = Field(None, max_length=500)
